@@ -22,6 +22,18 @@ Only ask once per folder; later checks of the same folder don't need a new previ
 
 **Local mode** (nothing uploaded): the user installs Trivy and Opengrep and sets `APPLEDGER_MODE=local` before starting Claude Code, or runs `python -m appledger PATH --local` in a terminal. Call `scanner_status` to see whether the scanners are found. With a connected dashboard, local mode still saves a summary (app name, score, grade, problem counts, top problem titles, AI cost); pass `save_to_dashboard=false` if they don't want that. Setup steps: https://appledger.net/docs/#local
 
+## If the AppLedger tools aren't available
+
+The plugin starts its tools with `uv`. If `preview_upload` and `check_app` don't exist in this session:
+
+1. Check with `uv --version`. If uv is missing, tell the user the plugin needs it (it also installs Python
+   for them) and offer to install it with the official installer: Windows `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`, macOS or Linux
+   `curl -LsSf https://astral.sh/uv/install.sh | sh`. Run it only if they agree, then ask them to start a new Claude Code session.
+2. Or use the command line instead, which works without the plugin's tools: `python -m pip install appledger`,
+   then `python -m appledger PATH --list-files` to show what would be sent, ask as in step 3, and run
+   `python -m appledger PATH --yes` once they agree. Read the results from `PATH/.appledger/findings.json`.
+   To connect a dashboard this way, the user runs `python -m appledger --connect KEY` themselves.
+
 ## 2. Explain the result
 
 Lead with the verdict, then the problems. Keep it short and concrete.
@@ -49,7 +61,7 @@ If `check_app` returns `dashboard` with `recorded: true`, say in one line that t
 
 ## Scheduled checks
 
-If the user wants the app checked regularly, suggest they run this once in a terminal (you don't run it for them):
+If the user wants the app checked regularly, suggest they install the package once (`python -m pip install appledger`; the plugin alone isn't enough, because scheduled runs happen without Claude Code) and run this once in a terminal (you don't run it for them):
 
 ```
 python -m appledger PATH --schedule weekly --yes

@@ -37,7 +37,7 @@ By default (hosted mode) **your project's source files are uploaded to the AppLe
 
 **You confirm first.** Before the first upload of a folder, your agent shows what would be sent (`preview_upload`) and asks you. If the code belongs to your employer or a client, make sure you're allowed to upload it, or use local mode.
 
-**Local mode** keeps the code on your computer: set `APPLEDGER_MODE=local` and install [Trivy](https://trivy.dev) and [Opengrep](https://github.com/opengrep/opengrep/releases). If the computer is connected to a dashboard, only a summary is saved there (app name, score, grade, problem counts, up to 3 top problem titles, scanners used, AI cost totals). Ask for "don't save to the dashboard" to skip even that.
+**Local mode** keeps the code on your computer: set `APPLEDGER_MODE=local` and install [Trivy](https://trivy.dev) and [Opengrep](https://github.com/opengrep/opengrep/releases). If the computer is connected to a dashboard, only a summary is saved there (app name, score, grade, problem counts, the list of problems found (level and short title, up to 60; never code or file paths), scanners used, AI cost totals). Ask for "don't save to the dashboard" to skip even that.
 
 Results are written to a `.appledger/` folder inside your project, which is excluded from version control.
 

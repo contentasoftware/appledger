@@ -180,12 +180,51 @@ def test_local_mode_records_summary_to_dashboard():
     assert req.get_header("X-appledger-key") == "al_" + "k" * 30
     assert req.get_header("Content-type") == "application/json"
     body = json.loads(req.data)
-    assert set(body) == {"app_name", "score", "grade", "scanners", "counts", "top_issues", "ai_tool", "ai_tokens",
-                         "ai_cost_usd", "client_version"}, body
+    assert set(body) == {"app_name", "score", "grade", "scanners", "counts", "top_issues", "issues", "ai_tool",
+                         "ai_tokens", "ai_cost_usd", "client_version"}, body
     assert body["counts"] == {"blocker": 2, "important": 0, "minor": 0}
-    assert body["top_issues"] == ["Your code contains a Slack key", "Your repository contains a secrets file (.env)"]
+    # Titles only: the secrets file's path is left out, and so are where, why, fix and technical details.
+    assert body["top_issues"] == ["Your code contains a Slack key", "Your repository contains a secrets file"]
+    assert body["issues"] == [
+        {"level": "blocker", "title": "Your code contains a Slack key", "topic": None},
+        {"level": "blocker", "title": "Your repository contains a secrets file", "topic": "secrets file tracked by git"},
+    ], body["issues"]
+    assert ".env" not in req.data.decode() and "app.py" not in req.data.decode()
     assert body["grade"] in "ABCDF" and isinstance(body["score"], int) and body["client_version"] == appledger.__version__
     assert body["ai_tool"] is None and body["ai_tokens"] is None and body["ai_cost_usd"] is None
+
+
+def test_record_payload_issues_most_serious_first_and_capped():
+    from appledger.client import record_payload
+    findings = [{"source": "Trivy", "kind": "outdated", "level": "minor", "title": f"pkg{n} is out of date",
+                 "where": "requirements.txt"} for n in range(70)]
+    findings.append({"source": "Opengrep", "kind": "security", "level": "important", "title": "Debug mode\nis on",
+                     "where": "src/app.py:9", "technical": "rule", "topic": "Debug mode is on"})
+    findings.append({"source": "AppLedger", "kind": "secret", "level": "important",
+                     "title": "A secrets file isn't ignored by git (config/prod.env)", "where": "config/prod.env",
+                     "topic": "secrets file not ignored by git"})
+    body = record_payload({"app": "x", "score": 40, "grade": "D", "scanners": ["Trivy"], "findings": findings},
+                          {"important": 2, "minor": 70})
+    issues = body["issues"]
+    assert len(issues) == 60 and all(set(i) == {"level", "title", "topic"} for i in issues)
+    assert [i["level"] for i in issues[:3]] == ["important", "important", "minor"]
+    assert issues[0] == {"level": "important", "title": "Debug mode is on", "topic": "Debug mode is on"}
+    assert issues[1]["title"] == "A secrets file isn't ignored by git"
+    assert "prod.env" not in json.dumps(body) and "src/app.py" not in json.dumps(body)
+    assert len(json.dumps(body).encode()) < 65_536  # the record API's size limit
+    assert body["top_issues"] == []
+
+
+def test_hosted_local_findings_leave_out_file_paths():
+    app = make_app()
+    answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"]})
+    with mock.patch.dict(os.environ, {"APPLEDGER_KEY": "al_" + "k" * 30}), \
+            mock.patch("urllib.request.urlopen", return_value=answer) as urlopen, \
+            mock.patch.object(scanner, "ai_usage_for", return_value=None):
+        scanner.check(app, mode="hosted", confirm_upload=True)
+    data = urlopen.call_args[0][0].data
+    sent = data[data.index(b'name="local_findings"'):data.index(b"PK\x03\x04")]
+    assert b'"title": "Your repository contains a secrets file"' in sent and b".env" not in sent, sent
 
 
 def test_local_mode_record_failure_does_not_fail_the_check():

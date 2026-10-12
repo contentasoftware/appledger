@@ -91,7 +91,7 @@ python -m appledger --connect al_your_key
 
 Or tell Claude: "Connect AppLedger with this key: al_…". The key is saved in `~/.appledger/key`; `APPLEDGER_KEY` overrides it and `--disconnect` removes it.
 
-From then on each check also saves a summary to your dashboard: the app's name, score, grade, problem counts, up to 3 titles of the most serious problems, the scanners used and the AI cost totals. Never the code.
+From then on each check also saves a summary to your dashboard: the app's name, score, grade, problem counts, the list of problems found (level and short title, up to 60; never code or file paths), the scanners used and the AI cost totals. Never the code.
 
 You can also add an app in the web app with **Add app**: register it without code, or upload a zip to check it in the browser (the zip is scanned and deleted the same way).
 

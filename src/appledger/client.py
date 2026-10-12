@@ -8,7 +8,8 @@ rest isn't. The upload goes over HTTPS, is scanned with Trivy and Opengrep, and 
 the server right after.
 
 In local mode nothing is uploaded; with a connection key, record_check sends only a summary
-(name, score, problem counts and titles, AI cost) to the dashboard. Never the code.
+(name, score, problem counts, the problems' levels and titles, AI cost) to the dashboard. Never
+the code or file paths.
 """
 
 import io
@@ -46,6 +47,8 @@ DATA_SUFFIXES = {
 VAULT_SUFFIXES = {".yml", ".yaml", ".txt", ".cfg", ".ini", ".conf", ".json", ""}
 DATA_FOLDER_WORDS = ("data", "dump", "export", "fixture", "sample", "traffic")
 MAX_DATA_JSON_BYTES = 100_000
+MAX_RECORDED_ISSUES = 60
+LEVEL_RANK = {"blocker": 0, "important": 1, "minor": 2}
 
 
 def looks_like_data(rel, size):
@@ -212,7 +215,7 @@ def hosted_scan(app_dir, app_name=None, usage=None, plan=None, save_to_dashboard
     key = connection_key() if save_to_dashboard else None
     fields = {"app_name": clean_name(app_name, app_dir), **ai_fields(usage)} if key else {}
     if key and local_findings:
-        fields["local_findings"] = json.dumps([{"level": f["level"], "title": f["title"]} for f in local_findings][:20])
+        fields["local_findings"] = json.dumps([{"level": f["level"], "title": summary_title(f)} for f in local_findings][:20])
     headers = {
         "Content-Type": f"multipart/form-data; boundary={boundary}",
         "Accept": "application/json",
@@ -235,10 +238,31 @@ def hosted_scan(app_dir, app_name=None, usage=None, plan=None, save_to_dashboard
     return result["findings"], result["scanners"], result.get("ledger")
 
 
-def record_payload(summary, counts, usage=None):
-    """The summary a local check sends to the dashboard: no code, no file contents, no logs.
+def summary_title(finding, limit=200):
+    """A problem's title for the dashboard: one line, without the file path some titles name in brackets."""
+    title = finding.get("title") or ""
+    where = (finding.get("where") or "").split(":")[0]
+    if where:
+        title = title.replace(f" ({where})", "")
+    return " ".join(title.split())[:limit]
 
-    counts uses the plain level keys (blocker, important, minor).
+
+def summary_issues(findings, limit=MAX_RECORDED_ISSUES):
+    """The problems a dashboard summary lists, most serious first: level, title and topic only."""
+    issues = []
+    for f in sorted(findings, key=lambda f: LEVEL_RANK.get(f.get("level"), 9)):
+        title = summary_title(f)
+        if f.get("level") in LEVEL_RANK and title:
+            topic = " ".join(str(f.get("topic") or "").split())[:120] or None
+            issues.append({"level": f["level"], "title": title, "topic": topic})
+    return issues[:limit]
+
+
+def record_payload(summary, counts, usage=None):
+    """The summary a local check sends to the dashboard: no code, no file contents or paths, no logs.
+
+    counts uses the plain level keys (blocker, important, minor). issues lists up to 60 problems
+    (level, title, topic), most serious first.
     """
     return {
         "app_name": clean_name(summary["app"], summary["app"]),
@@ -246,7 +270,8 @@ def record_payload(summary, counts, usage=None):
         "grade": summary["grade"],
         "scanners": list(summary["scanners"]),
         "counts": {lvl: int(counts.get(lvl, 0)) for lvl in ("blocker", "important", "minor")},
-        "top_issues": [f["title"] for f in summary["findings"] if f["level"] == "blocker"][:3],
+        "top_issues": [summary_title(f, 160) for f in summary["findings"] if f["level"] == "blocker"][:3],
+        "issues": summary_issues(summary["findings"]),
         **ai_fields(usage),
         "client_version": __version__,
     }

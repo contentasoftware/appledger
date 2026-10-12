@@ -1,17 +1,26 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "appledger"
 version = "0.1.0"
-description = "Honest security checks, in plain language, for apps built with AI."
+description = "The ledger for the AI app explosion: honest security checks, in plain language, for apps your people build with AI."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Contenta Software" }]
-keywords = ["security", "mcp", "claude", "codex", "trivy", "opengrep", "vibe-coding"]
+keywords = ["security", "mcp", "claude", "codex", "trivy", "opengrep", "vibe-coding", "governance"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = [
     "mcp>=1.20,<2",
     "pyyaml>=6",
@@ -21,6 +30,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://appledger.net/"
+Repository = "https://github.com/contentasoftware/appledger"
+Privacy = "https://appledger.net/privacy.html"
 
 [project.scripts]
 appledger = "appledger.scanner:main"
@@ -28,3 +39,6 @@ appledger-mcp = "appledger.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/appledger"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/appledger", "README.md", "LICENSE", "pyproject.toml"]

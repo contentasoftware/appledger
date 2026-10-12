@@ -16,7 +16,7 @@ from pathlib import Path
 from . import __version__
 from .scanner import ScanError, app_files
 
-API_URL = os.environ.get("APPLEDGER_API", "https://www.contenta-software.com/appledger/api/check.php")
+API_URL = os.environ.get("APPLEDGER_API", "https://appledger.net/api/check.php")
 MAX_FILE_BYTES = 1_000_000
 MAX_ZIP_BYTES = 10_000_000
 SKIP_SUFFIXES = {

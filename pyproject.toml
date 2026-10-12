@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://www.contenta-software.com/appledger/"
+Homepage = "https://appledger.net/"
 
 [project.scripts]
 appledger = "appledger.scanner:main"

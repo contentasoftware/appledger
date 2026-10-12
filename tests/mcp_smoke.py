@@ -50,9 +50,8 @@ async def main(app_dir):
             assert text.startswith("# Fix request"), text[:100]
             print("get_fix_prompt:", text.splitlines()[0], f"({len(text)} chars)")
 
-            cost = json.loads((await session.call_tool("ai_cost", {"path": app_dir})).content[0].text)
-            print("ai_cost:", f"{cost.get('tokens_total', 0):,} tokens, ${cost.get('cost_usd', 0)}"
-                  if cost.get("found") else cost.get("message"))
+            names = {t.name for t in tools.tools}
+            assert "ai_cost" not in names, "the plugin must not read Claude Code logs"
             print("OK")
 
 

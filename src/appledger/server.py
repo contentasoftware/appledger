@@ -5,8 +5,9 @@ commit, never secrets files) and sends them to the hosted AppLedger scanning ser
 scanners need to be installed. The first check of a folder needs the user's go-ahead: check_app
 returns needs_confirmation with a preview until it's called with confirm_upload=True.
 Set APPLEDGER_MODE=local to run Trivy and Opengrep on this machine instead, in which case no
-code leaves the computer. Tools: check_app, preview_upload, get_fix_prompt, ai_cost,
-connect_dashboard and scanner_status.
+code leaves the computer. Tools: check_app, preview_upload, get_fix_prompt, connect_dashboard
+and scanner_status. It never reads Claude Code or Codex logs: the AI cost estimate is only in the
+command line tool (python -m appledger PATH --ai-cost).
 """
 
 import json
@@ -72,7 +73,7 @@ async def check_app(path: str, app_name: str | None = None, confirm_upload: bool
         save_to_dashboard: false to keep this check out of the user's AppLedger dashboard.
     """
     try:
-        result = await anyio.to_thread.run_sync(lambda: check(path, app_name=app_name, confirm_upload=confirm_upload,
+        result = await anyio.to_thread.run_sync(lambda: check(path, app_name=app_name, confirm_upload=confirm_upload, read_ai_logs=False,
                                                               save_to_dashboard=save_to_dashboard))
     except ConsentRequired as e:
         preview = upload_preview(e.plan)
@@ -108,7 +109,6 @@ async def check_app(path: str, app_name: str | None = None, confirm_upload: bool
         "findings": [{k: f[k] for k in keep} for f in result["findings"]],
         "report": result["report"], "fix_prompt": result["fix_prompt"],
         "checked_by": "AppLedger scanning service" if hosted() else "scanners on this computer",
-        "ai_effort": short_usage(result.get("ai_usage")),
         "dashboard": dashboard,
     }
 
@@ -138,32 +138,6 @@ def preview_upload(path: str) -> dict:
         "mode": "hosted" if hosted() else "local (nothing is sent)",
         "upload_allowed": has_consent(path),
     }
-
-
-def short_usage(usage):
-    if not usage:
-        return None
-    return {"tokens": usage["tokens_total"], "sessions": usage["sessions"],
-            "estimated_cost_usd": usage["cost_usd"], "note": usage["note"]}
-
-
-@mcp.tool(annotations=ToolAnnotations(title="Estimate the AI tokens and cost behind an app", readOnlyHint=True, destructiveHint=False,
-                                      openWorldHint=False))
-def ai_cost(path: str) -> dict:
-    """Estimate how many AI tokens went into building an app, and what they would cost at API list prices.
-
-    Reads Claude Code and Codex session logs on this computer for sessions run in that folder; nothing is
-    uploaded. Returns totals plus a breakdown per tool and model. People on flat-rate plans (Claude Pro,
-    Max, Team) pay their plan price instead, so present the figure as the work's value at API rates.
-
-    Args:
-        path: absolute path to the app's folder.
-    """
-    from .scanner import ai_usage_for
-    usage = ai_usage_for(Path(path).resolve())
-    if not usage:
-        return {"found": False, "message": "No Claude Code or Codex logs on this computer mention this folder."}
-    return {"found": True, **usage}
 
 
 @mcp.tool(annotations=ToolAnnotations(title="Get the fix request for an app", readOnlyHint=True, destructiveHint=False,

@@ -19,6 +19,7 @@ import anyio
 
 from helpers import SRC, git, new_dir, run_all, write, fake_response
 
+import appledger
 from appledger import scanner
 from appledger.consent import CONSENT_FILE, has_consent
 
@@ -183,7 +184,7 @@ def test_local_mode_records_summary_to_dashboard():
                          "ai_cost_usd", "client_version"}, body
     assert body["counts"] == {"blocker": 2, "important": 0, "minor": 0}
     assert body["top_issues"] == ["Your code contains a Slack key", "Your repository contains a secrets file (.env)"]
-    assert body["grade"] in "ABCDF" and isinstance(body["score"], int) and body["client_version"] == "0.2.0"
+    assert body["grade"] in "ABCDF" and isinstance(body["score"], int) and body["client_version"] == appledger.__version__
     assert body["ai_tool"] is None and body["ai_tokens"] is None and body["ai_cost_usd"] is None
 
 

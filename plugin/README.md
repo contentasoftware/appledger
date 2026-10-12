@@ -48,6 +48,6 @@ Results are written to a `.appledger/` folder inside your project, which is excl
 ## What's included
 
 - `check-my-app` skill: asks before uploading, runs the check, explains it, fixes problems with your permission and checks again
-- `appledger` MCP server with these tools: `preview_upload` (what would be sent, without sending), `check_app`, `get_fix_prompt`, `ai_cost` (AI tokens and cost behind the app, read from your Claude Code and Codex logs on this computer, never uploaded), `connect_dashboard`, `scanner_status`
+- `appledger` MCP server with these tools: `preview_upload` (what would be sent, without sending), `check_app`, `get_fix_prompt`, `connect_dashboard`, `scanner_status`. The plugin never reads your Claude Code or Codex logs; the AI cost estimate (`python -m appledger PATH --ai-cost`) is in the command line tool only
 
 More: https://appledger.net/

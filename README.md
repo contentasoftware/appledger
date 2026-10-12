@@ -1,6 +1,6 @@
 # AppLedger honest check
 
-<!-- mcp-name: io.github.contentasoftware/appledger -->
+<!-- mcp-name: net.appledger/appledger -->
 
 Honest security feedback, in plain language, for apps people build with AI tools such as Claude Code, Codex, Cursor and Lovable.
 

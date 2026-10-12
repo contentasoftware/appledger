@@ -69,9 +69,11 @@ python -m appledger PATH --schedule weekly --yes
 
 Use the app's real path. `--yes` confirms the upload for unattended runs; `daily` and `off` also work, and `python -m appledger --schedules` lists what's scheduled. It uses Windows Task Scheduler or cron, so it runs even when Claude Code is closed.
 
-## AI effort
+## AI cost
 
-`check_app` also returns `ai_effort`: how many AI tokens went into the app, measured from Claude Code and Codex logs on this computer (never uploaded), and what they would cost at API list prices. If present, mention it in one line after the verdict. If the user asks how much AI or money went into the app, call `ai_cost` for the breakdown. Always add that on a flat-rate plan (Claude Pro, Max or Team) they pay their plan price, not this amount.
+The plugin doesn't measure how much AI went into an app, because that means reading Claude Code's own
+logs. If the user asks, tell them they can run `python -m appledger PATH --ai-cost` in a terminal
+themselves; it reads those logs on their computer only and never uploads them.
 
 ## Tone
 

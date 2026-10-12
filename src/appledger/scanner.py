@@ -224,19 +224,30 @@ def safest_fix(fixed_versions):
         return str(per_vuln[-1])
 
 
+def scanner_failed(name, stderr):
+    """On the hosted service, log the scanner's error and give the user a plain message without server
+    details; on the user's own computer, show the error so they can fix their setup."""
+    if os.environ.get("APPLEDGER_TRIVY_OFFLINE"):
+        print(f"{name} failed: {stderr.strip()[-1500:]}", file=sys.stderr)
+        return f"{name} couldn't check this project. Please try again later."
+    return f"{name} failed:\n" + stderr.strip()[-1500:]
+
+
 def run_trivy(app_dir):
     trivy = find_tool("APPLEDGER_TRIVY", ["trivy", "trivy.exe"])
     if not trivy:
         raise ScanError("Trivy is not installed. Install it from https://trivy.dev "
                         "(Windows: winget install AquaSecurity.Trivy, Mac: brew install trivy).")
     skip = [arg for d in sorted(SKIP_DIRS) for arg in ("--skip-dirs", d)]
+    offline = ["--skip-db-update", "--skip-java-db-update", "--offline-scan"] \
+        if os.environ.get("APPLEDGER_TRIVY_OFFLINE") else []
     proc = subprocess.run(
-        [trivy, "fs", "--quiet", "--scanners", "vuln,secret,misconfig", *skip,
+        [trivy, "fs", "--quiet", "--scanners", "vuln,secret,misconfig", *skip, *offline,
          "--format", "json", str(app_dir)],
         capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL,
     )
     if proc.returncode != 0:
-        raise ScanError("Trivy failed:\n" + proc.stderr.strip()[-1500:])
+        raise ScanError(scanner_failed("Trivy", proc.stderr))
     return json.loads(proc.stdout)
 
 
@@ -443,7 +454,7 @@ def run_opengrep(app_dir):
                            "--json", "--quiet", str(app_dir)],
                           capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL)
     if not proc.stdout.strip():
-        raise ScanError("Opengrep failed:\n" + proc.stderr.strip()[-1500:])
+        raise ScanError(scanner_failed("Opengrep", proc.stderr))
     data = json.loads(proc.stdout)
     for err in data.get("errors", []):
         print("Opengrep warning:", err.get("message", "")[:200], file=sys.stderr)
@@ -806,7 +817,7 @@ def scan(app_dir, sonar_dir=None, code_scan=True):
 
 
 def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, mode=None,
-          confirm_upload=False, save_to_dashboard=True):
+          confirm_upload=False, save_to_dashboard=True, read_ai_logs=True):
     """Check an app folder and write report.html, fix-prompt.md and findings.json.
 
     mode "hosted" (the default) sends the project's files to the AppLedger scanning service, so
@@ -839,7 +850,8 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
 
     out = Path(out_dir) if out_dir else app_dir / OUTPUT_DIR_NAME
     out.mkdir(parents=True, exist_ok=True)
-    usage = ai_usage_for(app_dir)
+    # The AI cost comes from coding agents' logs on this computer; the MCP server turns this off.
+    usage = ai_usage_for(app_dir) if read_ai_logs else None
     ledger = None
     local_findings = findings_for_secret_files(plan["secret_files_not_ignored"])
     if hosted:

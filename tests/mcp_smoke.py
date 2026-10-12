@@ -51,7 +51,8 @@ async def main(app_dir):
             print("get_fix_prompt:", text.splitlines()[0], f"({len(text)} chars)")
 
             names = {t.name for t in tools.tools}
-            assert "ai_cost" not in names, "the plugin must not read Claude Code logs"
+            assert not any("cost" in n for n in names), "AppLedger never reads coding agents' logs"
+            assert "ai_usage" not in data and not any(k.startswith("ai_") for k in data), list(data)
             print("OK")
 
 

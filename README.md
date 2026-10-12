@@ -20,16 +20,6 @@ Each run produces, in `<your-app>/.appledger/`:
 - `fix-prompt.md`: a ready-made fix request for your coding agent
 - `findings.json`: the same findings for tools and dashboards
 
-## AI effort behind the app
-
-Every check also reports how many AI tokens went into the app and what they would cost at API list prices. It reads the coding agents' own logs on your computer (Claude Code in `~/.claude/projects`, Codex in `~/.codex/sessions`), counts sessions that ran in the app's folder, and prices each reply by model, including cache reads and writes. These logs never leave your computer. On a flat-rate plan (Claude Pro, Max or Team) you pay your plan price instead, so the figure shows the work's value at API rates.
-
-```
-python -m appledger path/to/your-app --ai-cost
-```
-
-Codex support follows Codex's documented log format and hasn't been tested against real Codex logs yet.
-
 ## Two ways to run
 
 | Mode | What you install | Where your code goes |
@@ -83,7 +73,7 @@ Version 0.2.0 (upload preview, consent, secret-file exclusion, scheduling) is be
 
 ## Company dashboard
 
-Create a free account at [appledger.net](https://appledger.net/app/signup.php) to keep every app your people check in one ledger: owner, grade, score trend, who may use it and the AI cost behind it. Create a connection key under "Connect a computer", then save it on each computer:
+Create a free account at [appledger.net](https://appledger.net/app/signup.php) to keep every app your people check in one ledger: owner, grade, score trend, who may use it and which AI tool built it. Create a connection key under "Connect a computer", then save it on each computer:
 
 ```
 python -m appledger --connect al_your_key
@@ -91,7 +81,7 @@ python -m appledger --connect al_your_key
 
 Or tell Claude: "Connect AppLedger with this key: al_…". The key is saved in `~/.appledger/key`; `APPLEDGER_KEY` overrides it and `--disconnect` removes it.
 
-From then on each check also saves a summary to your dashboard: the app's name, score, grade, problem counts, the list of problems found (level and short title, up to 60; never code or file paths), the scanners used and the AI cost totals. Never the code.
+From then on each check also saves a summary to your dashboard: the app's name, score, grade, problem counts, the list of problems found (level and short title, up to 60; never code or file paths), and the scanners used. Never the code.
 
 You can also add an app in the web app with **Add app**: register it without code, or upload a zip to check it in the browser (the zip is scanned and deleted the same way).
 

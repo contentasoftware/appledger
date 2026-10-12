@@ -20,7 +20,7 @@ By default the check uploads the project's source files to appledger.net, where 
 
 Only ask once per folder; later checks of the same folder don't need a new preview unless the user wants one. If the user runs AppLedger in local mode, nothing is uploaded, so skip steps 2–3.
 
-**Local mode** (nothing uploaded): the user installs Trivy and Opengrep and sets `APPLEDGER_MODE=local` before starting Claude Code, or runs `python -m appledger PATH --local` in a terminal. Call `scanner_status` to see whether the scanners are found. With a connected dashboard, local mode still saves a summary (app name, score, grade, problem counts, top problem titles, AI cost); pass `save_to_dashboard=false` if they don't want that. Setup steps: https://appledger.net/docs/#local
+**Local mode** (nothing uploaded): the user installs Trivy and Opengrep and sets `APPLEDGER_MODE=local` before starting Claude Code, or runs `python -m appledger PATH --local` in a terminal. Call `scanner_status` to see whether the scanners are found. With a connected dashboard, local mode still saves a summary (app name, score, grade, problem counts, the list of problems found (level and short title, never code or file paths)); pass `save_to_dashboard=false` if they don't want that. Setup steps: https://appledger.net/docs/#local
 
 ## If the AppLedger tools aren't available
 
@@ -68,12 +68,6 @@ python -m appledger PATH --schedule weekly --yes
 ```
 
 Use the app's real path. `--yes` confirms the upload for unattended runs; `daily` and `off` also work, and `python -m appledger --schedules` lists what's scheduled. It uses Windows Task Scheduler or cron, so it runs even when Claude Code is closed.
-
-## AI cost
-
-The plugin doesn't measure how much AI went into an app, because that means reading Claude Code's own
-logs. If the user asks, tell them they can run `python -m appledger PATH --ai-cost` in a terminal
-themselves; it reads those logs on their computer only and never uploads them.
 
 ## Tone
 

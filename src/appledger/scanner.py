@@ -647,36 +647,7 @@ def write_fix_prompt(findings, app_name, scanners, path):
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def usage_section(usage):
-    """HTML for the 'AI effort' part of the report, or '' when no agent logs were found."""
-    if not usage:
-        return ""
-    e = html.escape
-    rows = []
-    for tool in usage["tools"]:
-        here = tool["this_folder"]
-        if not here:
-            continue
-        for model, v in here["by_model"].items():
-            cost = f"${v['cost_usd']:,.2f}" if v.get("cost_usd") else "not priced"
-            rows.append(f"<tr><td>{e(tool['tool'])}</td><td>{e(model)}</td><td>{v['messages']:,}</td>"
-                        f"<td>{v['input'] + v['cache_write'] + v['cache_read'] + v['output']:,}</td><td>{cost}</td></tr>")
-    parent = [t["parent_folders"] for t in usage["tools"] if t.get("parent_folders")]
-    parent_note = (f"<p class=\"tech\">Another {sum(p['tokens_total'] for p in parent):,} tokens "
-                   f"(${sum(p['cost_usd'] for p in parent):,.2f}) were used in sessions started in a parent folder; "
-                   "they may include other work, so they're not counted above.</p>") if parent else ""
-    return f"""
-  <section class="usage">
-    <h2>AI effort that went into this app</h2>
-    <p><strong>{usage['tokens_total']:,} tokens</strong> over {usage['sessions']} session{'s' if usage['sessions'] != 1 else ''},
-       worth about <strong>${usage['cost_usd']:,.2f}</strong> at API list prices.</p>
-    <table><thead><tr><th>Tool</th><th>Model</th><th>Replies</th><th>Tokens</th><th>Est. cost</th></tr></thead>
-      <tbody>{''.join(rows)}</tbody></table>
-    <p class="tech">{e(usage['note'])} Prices: {e(usage['prices'])}.</p>{parent_note}
-  </section>"""
-
-
-def write_report(findings, app_name, scanners, path, usage=None):
+def write_report(findings, app_name, scanners, path):
     e = html.escape
     score = health_score(findings)
     grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 55 else "D" if score >= 30 else "F"
@@ -729,10 +700,6 @@ h1,h2,h3 {{ margin:0; line-height:1.2 }} p {{ margin:0 }}
 button {{ font:inherit; padding:8px 14px; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer }}
 button:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px }}
 .fixbox {{ background:var(--surface); border:1px dashed var(--accent); border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:10px }}
-.usage {{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:10px; overflow-x:auto }}
-.usage table {{ border-collapse:collapse; width:100%; min-width:460px; font-size:14px; font-variant-numeric:tabular-nums }}
-.usage th, .usage td {{ text-align:left; padding:6px 8px; border-bottom:1px solid var(--line) }}
-.usage th {{ font:600 11px/1 ui-monospace,Consolas,monospace; text-transform:uppercase; letter-spacing:.06em; color:var(--muted) }}
 @media (max-width:620px) {{ .summary {{ grid-template-columns:1fr }} .tiers li {{ grid-template-columns:1fr; gap:2px }} }}
 </style></head>
 <body><main>
@@ -748,7 +715,7 @@ button:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px }}
         <span class="pill minor">{counts['minor']} good to know</span>
       </div></div>
   </section>
-  <section><h2 style="margin-bottom:12px">Who can use it right now</h2><ul class="tiers">{tiers}</ul></section>{usage_section(usage)}
+  <section><h2 style="margin-bottom:12px">Who can use it right now</h2><ul class="tiers">{tiers}</ul></section>
   <section class="fixbox">
     <h2>Fix it for me</h2>
     <p>AppLedger wrote a fix request for the coding agent that built this app (Claude Code, Cursor, Codex…). Open <code>fix-prompt.md</code>, paste it into the agent, then run the check again.</p>
@@ -782,15 +749,6 @@ def doctor():
     }
 
 
-def ai_usage_for(app_dir):
-    """Token use and cost from local agent logs; never lets a log problem break the check."""
-    from .usage import estimate_usage
-    try:
-        return estimate_usage(app_dir)
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
-
-
 def grade_for(score):
     return "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 55 else "D" if score >= 30 else "F"
 
@@ -817,7 +775,7 @@ def scan(app_dir, sonar_dir=None, code_scan=True):
 
 
 def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, mode=None,
-          confirm_upload=False, save_to_dashboard=True, read_ai_logs=True):
+          confirm_upload=False, save_to_dashboard=True):
     """Check an app folder and write report.html, fix-prompt.md and findings.json.
 
     mode "hosted" (the default) sends the project's files to the AppLedger scanning service, so
@@ -850,12 +808,10 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
 
     out = Path(out_dir) if out_dir else app_dir / OUTPUT_DIR_NAME
     out.mkdir(parents=True, exist_ok=True)
-    # The AI cost comes from coding agents' logs on this computer; the MCP server turns this off.
-    usage = ai_usage_for(app_dir) if read_ai_logs else None
     ledger = None
     local_findings = findings_for_secret_files(plan["secret_files_not_ignored"])
     if hosted:
-        findings, scanners, ledger = hosted_scan(app_dir, app_name, usage, plan, save_to_dashboard, local_findings)
+        findings, scanners, ledger = hosted_scan(app_dir, app_name, plan, save_to_dashboard, local_findings)
     else:
         findings, scanners = scan(app_dir, sonar_dir, code_scan)
     findings = dedupe(findings + local_findings)
@@ -865,7 +821,7 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
     if not hosted and save_to_dashboard and connection_key():
         # Local mode sends no code: only the summary below, so the dashboard still shows the app.
         ledger = record_check(record_payload({"app": app_name, "score": score, "grade": grade_for(score),
-                                              "scanners": scanners, "findings": findings}, counts, usage))
+                                              "scanners": scanners, "findings": findings}, counts))
     summary = {
         "app": app_name, "score": score, "grade": grade_for(score), "scanners": scanners,
         "counts": {LEVELS[k]["label"]: v for k, v in counts.items()},
@@ -874,12 +830,11 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
         "findings": findings,
         "report": str(out / "report.html"), "fix_prompt": str(out / "fix-prompt.md"),
         "checked_at": datetime.now().isoformat(timespec="seconds"),
-        "ai_usage": usage,
         "ledger": ledger,
     }
     (out / "findings.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     write_fix_prompt(findings, app_name, scanners, out / "fix-prompt.md")
-    write_report(findings, app_name, scanners, out / "report.html", summary["ai_usage"])
+    write_report(findings, app_name, scanners, out / "report.html")
     (out / ".gitignore").write_text("*\n", encoding="utf-8")  # keep reports out of version control
     return summary
 
@@ -939,8 +894,6 @@ def main():
     ap.add_argument("--sonar-dir", help="folder with sonar-issues.json and sonar-hotspots.json")
     ap.add_argument("--no-code-scan", action="store_true", help="skip the Opengrep code scan")
     ap.add_argument("--doctor", action="store_true", help="show which scanners are available")
-    ap.add_argument("--ai-cost", action="store_true",
-                    help="only show how many AI tokens, and what they'd cost, went into this folder")
     ap.add_argument("--local", action="store_true",
                     help="run Trivy and Opengrep on this machine instead of the AppLedger service")
     ap.add_argument("--yes", action="store_true",
@@ -972,18 +925,6 @@ def main():
         print(f"Connected. Key saved in {where}. Every check from this computer now appears in {DASHBOARD_URL}")
         return
 
-    if args.ai_cost:
-        usage = ai_usage_for(Path(args.app_dir).resolve())
-        if not usage:
-            print("No Claude Code or Codex logs on this computer mention this folder.")
-            return
-        print(f"{usage['tokens_total']:,} tokens over {usage['sessions']} sessions, "
-              f"about ${usage['cost_usd']:,.2f} at API list prices.")
-        for tool in usage["tools"]:
-            for model, v in (tool["this_folder"] or {}).get("by_model", {}).items():
-                print(f"  {tool['tool']:12} {model:22} {v['messages']:>6,} replies  ${v.get('cost_usd', 0):>9,.2f}")
-        print(usage["note"])
-        return
     if args.doctor:
         for tool, where in doctor().items():
             print(f"{tool:15} {where or 'not found'}")

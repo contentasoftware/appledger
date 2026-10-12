@@ -13,6 +13,7 @@ import threading
 import urllib.error
 import zipfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from unittest import mock
 
 import anyio
@@ -131,8 +132,7 @@ def test_cli_prompt_in_a_terminal():
     answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"]})
     with mock.patch.object(sys, "argv", argv), mock.patch.object(appledger.consent, "interactive", return_value=True), \
             mock.patch("builtins.input", return_value="y"), \
-            mock.patch("urllib.request.urlopen", return_value=answer) as urlopen, \
-            mock.patch.object(scanner, "ai_usage_for", return_value=None):
+            mock.patch("urllib.request.urlopen", return_value=answer) as urlopen:
         scanner.main()
     assert urlopen.call_count == 1 and has_consent(app)
 
@@ -162,8 +162,7 @@ def test_mcp_check_app_asks_first():
 
 
 def local_check(app, save=True):
-    with mock.patch.object(scanner, "scan", return_value=([dict(FAKE_FINDING)], ["Trivy", "Opengrep"])), \
-            mock.patch.object(scanner, "ai_usage_for", return_value=None):
+    with mock.patch.object(scanner, "scan", return_value=([dict(FAKE_FINDING)], ["Trivy", "Opengrep"])):
         return scanner.check(app, mode="local", save_to_dashboard=save)
 
 
@@ -180,8 +179,8 @@ def test_local_mode_records_summary_to_dashboard():
     assert req.get_header("X-appledger-key") == "al_" + "k" * 30
     assert req.get_header("Content-type") == "application/json"
     body = json.loads(req.data)
-    assert set(body) == {"app_name", "score", "grade", "scanners", "counts", "top_issues", "issues", "ai_tool",
-                         "ai_tokens", "ai_cost_usd", "client_version"}, body
+    assert set(body) == {"app_name", "score", "grade", "scanners", "counts", "top_issues", "issues",
+                         "client_version"}, body
     assert body["counts"] == {"blocker": 2, "important": 0, "minor": 0}
     # Titles only: the secrets file's path is left out, and so are where, why, fix and technical details.
     assert body["top_issues"] == ["Your code contains a Slack key", "Your repository contains a secrets file"]
@@ -191,7 +190,10 @@ def test_local_mode_records_summary_to_dashboard():
     ], body["issues"]
     assert ".env" not in req.data.decode() and "app.py" not in req.data.decode()
     assert body["grade"] in "ABCDF" and isinstance(body["score"], int) and body["client_version"] == appledger.__version__
-    assert body["ai_tool"] is None and body["ai_tokens"] is None and body["ai_cost_usd"] is None
+    # A check never reads coding agents' logs, and never reports AI tools, token counts or costs.
+    assert not any(k.startswith("ai_") for k in body) and "ai_usage" not in result
+    report = Path(result["report"]).read_text(encoding="utf-8")
+    assert "$" not in report and "token" not in report.lower(), "the report must not show AI cost"
 
 
 def test_record_payload_issues_most_serious_first_and_capped():
@@ -219,11 +221,11 @@ def test_hosted_local_findings_leave_out_file_paths():
     app = make_app()
     answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"]})
     with mock.patch.dict(os.environ, {"APPLEDGER_KEY": "al_" + "k" * 30}), \
-            mock.patch("urllib.request.urlopen", return_value=answer) as urlopen, \
-            mock.patch.object(scanner, "ai_usage_for", return_value=None):
+            mock.patch("urllib.request.urlopen", return_value=answer) as urlopen:
         scanner.check(app, mode="hosted", confirm_upload=True)
     data = urlopen.call_args[0][0].data
     sent = data[data.index(b'name="local_findings"'):data.index(b"PK\x03\x04")]
+    assert b'name="ai_' not in data, "hosted checks send no AI tool, token or cost fields"
     assert b'"title": "Your repository contains a secrets file"' in sent and b".env" not in sent, sent
 
 
@@ -244,8 +246,7 @@ def test_no_dashboard_skips_recording_and_key():
     # Hosted: the upload still happens, but without the key.
     answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"]})
     with mock.patch.dict(os.environ, {"APPLEDGER_KEY": "al_" + "k" * 30}), \
-            mock.patch("urllib.request.urlopen", return_value=answer) as urlopen, \
-            mock.patch.object(scanner, "ai_usage_for", return_value=None):
+            mock.patch("urllib.request.urlopen", return_value=answer) as urlopen:
         scanner.check(app, mode="hosted", confirm_upload=True, save_to_dashboard=False)
     req = urlopen.call_args[0][0]
     assert req.get_header("X-appledger-key") is None and b'name="app_name"' not in req.data

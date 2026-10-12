@@ -11,7 +11,7 @@ Full guide: https://appledger.net/docs/
 
 - "Is my app safe to share?"
 - "Add this app to AppLedger."
-- "How much did it cost to build this app with AI?"
+- "Check my app every week."
 
 ## Install
 
@@ -37,7 +37,7 @@ By default (hosted mode) **your project's source files are uploaded to the AppLe
 
 **You confirm first.** Before the first upload of a folder, your agent shows what would be sent (`preview_upload`) and asks you. If the code belongs to your employer or a client, make sure you're allowed to upload it, or use local mode.
 
-**Local mode** keeps the code on your computer: set `APPLEDGER_MODE=local` and install [Trivy](https://trivy.dev) and [Opengrep](https://github.com/opengrep/opengrep/releases). If the computer is connected to a dashboard, only a summary is saved there (app name, score, grade, problem counts, the list of problems found (level and short title, up to 60; never code or file paths), scanners used, AI cost totals). Ask for "don't save to the dashboard" to skip even that.
+**Local mode** keeps the code on your computer: set `APPLEDGER_MODE=local` and install [Trivy](https://trivy.dev) and [Opengrep](https://github.com/opengrep/opengrep/releases). If the computer is connected to a dashboard, only a summary is saved there (app name, score, grade, problem counts, the list of problems found (level and short title, up to 60; never code or file paths), scanners used). Ask for "don't save to the dashboard" to skip even that.
 
 Results are written to a `.appledger/` folder inside your project, which is excluded from version control.
 
@@ -48,6 +48,6 @@ Results are written to a `.appledger/` folder inside your project, which is excl
 ## What's included
 
 - `check-my-app` skill: asks before uploading, runs the check, explains it, fixes problems with your permission and checks again
-- `appledger` MCP server with these tools: `preview_upload` (what would be sent, without sending), `check_app`, `get_fix_prompt`, `connect_dashboard`, `scanner_status`. The plugin never reads your Claude Code or Codex logs; the AI cost estimate (`python -m appledger PATH --ai-cost`) is in the command line tool only
+- `appledger` MCP server with these tools: `preview_upload` (what would be sent, without sending), `check_app`, `get_fix_prompt`, `connect_dashboard`, `scanner_status`
 
 More: https://appledger.net/

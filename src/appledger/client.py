@@ -8,8 +8,8 @@ rest isn't. The upload goes over HTTPS, is scanned with Trivy and Opengrep, and 
 the server right after.
 
 In local mode nothing is uploaded; with a connection key, record_check sends only a summary
-(name, score, problem counts, the problems' levels and titles, AI cost) to the dashboard. Never
-the code or file paths.
+(name, score, problem counts, the problems' levels and titles) to the dashboard. Never the code
+or file paths.
 """
 
 import io
@@ -172,15 +172,6 @@ def forget_connection_key():
     KEY_FILE.unlink(missing_ok=True)
 
 
-def ai_fields(usage):
-    """The AI effort totals that go to the dashboard (never the logs themselves)."""
-    tools = [t["tool"] for t in (usage or {}).get("tools", []) if t.get("this_folder")]
-    spent = bool(usage and usage.get("tokens_total"))
-    return {"ai_tool": ", ".join(tools) or None,
-            "ai_tokens": usage["tokens_total"] if spent else None,
-            "ai_cost_usd": usage["cost_usd"] if spent else None}
-
-
 def clean_name(app_name, app_dir):
     return " ".join((app_name or Path(app_dir).name).split())
 
@@ -201,11 +192,11 @@ def error_message(e):
         return ""
 
 
-def hosted_scan(app_dir, app_name=None, usage=None, plan=None, save_to_dashboard=True, local_findings=None):
+def hosted_scan(app_dir, app_name=None, plan=None, save_to_dashboard=True, local_findings=None):
     """Returns (findings, scanner names, ledger) from the AppLedger service.
 
     Sends only the files in upload_plan (pass plan to reuse one already shown to the user). With
-    a connection key and save_to_dashboard, the app's name, score and AI cost totals are also
+    a connection key and save_to_dashboard, the app's name and score are also
     saved to the organisation's dashboard, and ledger says where. Otherwise ledger is None and
     the key isn't sent. local_findings (found on this computer, such as committed secrets files)
     are sent as level and title only, so the dashboard's score matches the local report.
@@ -213,7 +204,7 @@ def hosted_scan(app_dir, app_name=None, usage=None, plan=None, save_to_dashboard
     data, count, skipped = build_zip(app_dir, plan)
     boundary = uuid.uuid4().hex
     key = connection_key() if save_to_dashboard else None
-    fields = {"app_name": clean_name(app_name, app_dir), **ai_fields(usage)} if key else {}
+    fields = {"app_name": clean_name(app_name, app_dir)} if key else {}
     if key and local_findings:
         fields["local_findings"] = json.dumps([{"level": f["level"], "title": summary_title(f)} for f in local_findings][:20])
     headers = {
@@ -258,8 +249,8 @@ def summary_issues(findings, limit=MAX_RECORDED_ISSUES):
     return issues[:limit]
 
 
-def record_payload(summary, counts, usage=None):
-    """The summary a local check sends to the dashboard: no code, no file contents or paths, no logs.
+def record_payload(summary, counts):
+    """The summary a local check sends to the dashboard: no code, no file contents or paths.
 
     counts uses the plain level keys (blocker, important, minor). issues lists up to 60 problems
     (level, title, topic), most serious first.
@@ -272,7 +263,6 @@ def record_payload(summary, counts, usage=None):
         "counts": {lvl: int(counts.get(lvl, 0)) for lvl in ("blocker", "important", "minor")},
         "top_issues": [summary_title(f, 160) for f in summary["findings"] if f["level"] == "blocker"][:3],
         "issues": summary_issues(summary["findings"]),
-        **ai_fields(usage),
         "client_version": __version__,
     }
 

@@ -1,6 +1,6 @@
 {
   "name": "appledger",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Security checks for apps you build with AI: independent scanners (Trivy, Opengrep), results in plain English, fixes by your agent. By default your source files are sent to appledger.net, scanned and deleted right after; secret files such as .env and keys are never sent, and you confirm before the first upload. Local mode keeps the code on your computer.",
   "author": {
     "name": "Contenta Software",

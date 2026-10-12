@@ -6,8 +6,7 @@ scanners need to be installed. The first check of a folder needs the user's go-a
 returns needs_confirmation with a preview until it's called with confirm_upload=True.
 Set APPLEDGER_MODE=local to run Trivy and Opengrep on this machine instead, in which case no
 code leaves the computer. Tools: check_app, preview_upload, get_fix_prompt, connect_dashboard
-and scanner_status. It never reads Claude Code or Codex logs: the AI cost estimate is only in the
-command line tool (python -m appledger PATH --ai-cost).
+and scanner_status.
 """
 
 import json
@@ -73,7 +72,7 @@ async def check_app(path: str, app_name: str | None = None, confirm_upload: bool
         save_to_dashboard: false to keep this check out of the user's AppLedger dashboard.
     """
     try:
-        result = await anyio.to_thread.run_sync(lambda: check(path, app_name=app_name, confirm_upload=confirm_upload, read_ai_logs=False,
+        result = await anyio.to_thread.run_sync(lambda: check(path, app_name=app_name, confirm_upload=confirm_upload,
                                                               save_to_dashboard=save_to_dashboard))
     except ConsentRequired as e:
         preview = upload_preview(e.plan)

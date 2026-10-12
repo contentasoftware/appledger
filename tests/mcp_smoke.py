@@ -1,6 +1,9 @@
 """Smoke test: start the AppLedger MCP server over stdio and call each tool like an agent would.
 
     python tests/mcp_smoke.py <app-folder>
+
+In hosted mode this sends the folder's files to appledger.net (the script plays the user saying
+yes to the upload), so only point it at a sample app.
 """
 
 import asyncio
@@ -26,11 +29,21 @@ async def main(app_dir):
             status = await session.call_tool("scanner_status", {})
             print("scanner_status:", status.content[0].text[:300])
 
-            result = await session.call_tool("check_app", {"path": app_dir, "app_name": "Sales quote calculator"})
-            data = json.loads(result.content[0].text)
+            preview = json.loads((await session.call_tool("preview_upload", {"path": app_dir})).content[0].text)
+            assert preview["ok"], preview
+            print(f"preview_upload: {preview['files']} files ({preview['size']}), "
+                  f"{preview['excluded_total']} left out, selected by {preview['selected_by']}")
+
+            args = {"path": app_dir, "app_name": "Sales quote calculator"}
+            data = json.loads((await session.call_tool("check_app", args)).content[0].text)
+            if data.get("needs_confirmation"):
+                print("check_app asked first:", data["upload_preview"])
+                assert data["upload_preview"]["files"] == preview["files"]
+                data = json.loads((await session.call_tool("check_app", {**args, "confirm_upload": True})).content[0].text)
             assert data["ok"], data
             print(f"check_app: grade {data['grade']}, score {data['score']}, counts {data['counts']}")
             print("first finding:", data["findings"][0]["title"])
+            print("dashboard:", data["dashboard"])
 
             prompt = await session.call_tool("get_fix_prompt", {"path": app_dir})
             text = prompt.content[0].text

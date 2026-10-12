@@ -1,18 +1,26 @@
 ---
 name: check-my-app
-description: Check an app the user built with AI for security problems before they share it, explain the results in plain language, and fix them. Use when the user asks whether their app is safe, secure or ready to share, wants a security check or review, or is about to deploy or share an app with colleagues.
+description: Check an app the user built with AI for security problems, explain the results in plain language, fix them, and record the app in AppLedger. Use when the user says "check my app", "is my app safe", "is this secure", "add this app to AppLedger", asks whether their app is ready to share, wants a security check or review, or is about to deploy or share an app with colleagues.
 ---
 
 # Check my app
 
-The user built an app, often with an AI tool, and wants to know if it's safe to share. They may not be a developer. Your job: get an honest, independent verdict, explain it in everyday words, and fix what they agree to fix.
+The user built an app, often with an AI tool, and wants to know if it's safe to share. They may not be a developer. Your job: get an honest, independent verdict, explain it in everyday words, and fix what they agree to fix. Checking an app also adds it to their AppLedger dashboard if this computer is connected.
 
-## 1. Run the check
+## 1. Ask before uploading
+
+By default the check uploads the project's source files to appledger.net, where they are scanned and deleted right after. The user must agree to that first.
 
 1. Find the app's folder. Use the current project unless the user names another folder. Pass an absolute path.
-2. Before the first check, tell the user in one sentence: the project's source files are sent to the AppLedger scanning service over an encrypted connection, checked, and deleted right after. If they'd rather not, stop here.
-3. Call the `check_app` tool from the AppLedger MCP server with that path. It usually takes 10–30 seconds; tell the user it's running.
-4. If it returns `ok: false`, show the error in plain words. Call `scanner_status` if the service seems unreachable.
+2. Call `preview_upload` with that path. Summarise it in one or two sentences, for example: "To check it, AppLedger will send 48 source files (1.2 MB) to appledger.net over an encrypted connection; they're deleted right after the scan. Secret files like `.env` and key files stay on your computer (3 left out)."
+3. Ask: **"Are you allowed to upload this code?"** If it belongs to an employer or client and they're not sure, suggest local mode (below) or checking with their IT team first. Don't upload until they say yes.
+4. If they say yes, call `check_app` with the path and `confirm_upload=True`. It usually takes 10–30 seconds; tell them it's running.
+5. If `check_app` returns `needs_confirmation` (for example when you called it without asking), don't retry on your own. Show the user its upload preview, ask as in step 3, and call again with `confirm_upload=True` only after they agree.
+6. If it returns `ok: false`, show the error in plain words. Call `scanner_status` if the service seems unreachable. If it says the connection key was revoked, tell them to create a new key in the dashboard.
+
+Only ask once per folder; later checks of the same folder don't need a new preview unless the user wants one. If the user runs AppLedger in local mode, nothing is uploaded, so skip steps 2–3.
+
+**Local mode** (nothing uploaded): the user installs Trivy and Opengrep and sets `APPLEDGER_MODE=local` before starting Claude Code, or runs `python -m appledger PATH --local` in a terminal. Call `scanner_status` to see whether the scanners are found. With a connected dashboard, local mode still saves a summary (app name, score, grade, problem counts, top problem titles, AI cost); pass `save_to_dashboard=false` if they don't want that. Setup steps: https://appledger.net/docs/#local
 
 ## 2. Explain the result
 
@@ -20,9 +28,10 @@ Lead with the verdict, then the problems. Keep it short and concrete.
 
 - Start with the grade, the score, and who may use the app right now (from `who_can_use_it`).
 - Explain the "Fix before sharing" items first, one line each, using the finding's own plain wording. Say what could happen, not the technical name.
-- Summarize "Fix soon" items in a sentence or two. Mention "Good to know" items only if asked.
+- Summarise "Fix soon" items in a sentence or two. Mention "Good to know" items only if asked.
 - Don't paste CVE numbers, rule IDs or file dumps unless the user asks.
 - Tell them the full report is in `report.html` (give the path) if they want to read it.
+- If a finding says a secret file (such as `.env` or a key file) is committed to Git or not ignored: its content was not uploaded, but anyone who can see the repository can read it. Tell them to **create new keys at each provider and revoke the old ones**, then add the file to `.gitignore` and remove it from Git.
 
 Then ask: "Do you want me to fix these?"
 
@@ -32,11 +41,25 @@ Then ask: "Do you want me to fix these?"
 2. After each fix, say in one plain sentence what you changed.
 3. Never remove a feature to make a warning disappear. If a fix would change how the app behaves, ask first.
 4. Never put keys or passwords in code. Move them to environment variables. **Tell the user that any key that was in the code must be treated as leaked and replaced** (for example a new Stripe or Slack key), because you can't do that for them.
-5. When done, call `check_app` again and show the old and new score side by side, plus anything still open.
+5. When done, call `check_app` again (same path, `confirm_upload=True` since they already agreed) and show the old and new score side by side, plus anything still open.
+
+## Dashboard
+
+If `check_app` returns `dashboard` with `recorded: true`, say in one line that the app is saved in their AppLedger dashboard and give the link. If it isn't connected and they want a dashboard, point them to https://appledger.net/app/ → "Connect a computer". If the user gives you a connection key (it starts with `al_`), call `connect_dashboard` with it. Never invent a key, and only use one the user gave you in this conversation.
+
+## Scheduled checks
+
+If the user wants the app checked regularly, suggest they run this once in a terminal (you don't run it for them):
+
+```
+python -m appledger PATH --schedule weekly --yes
+```
+
+Use the app's real path. `--yes` confirms the upload for unattended runs; `daily` and `off` also work, and `python -m appledger --schedules` lists what's scheduled. It uses Windows Task Scheduler or cron, so it runs even when Claude Code is closed.
 
 ## AI effort
 
-`check_app` also returns `ai_effort`: how many AI tokens went into the app, measured from Claude Code and Codex logs on this computer, and what they would cost at API list prices. If present, mention it in one line after the verdict. If the user asks how much AI or money went into the app, call `ai_cost` for the breakdown. Always add that on a flat-rate plan (Claude Pro, Max or Team) they pay their plan price, not this amount.
+`check_app` also returns `ai_effort`: how many AI tokens went into the app, measured from Claude Code and Codex logs on this computer (never uploaded), and what they would cost at API list prices. If present, mention it in one line after the verdict. If the user asks how much AI or money went into the app, call `ai_cost` for the breakdown. Always add that on a flat-rate plan (Claude Pro, Max or Team) they pay their plan price, not this amount.
 
 ## Tone
 

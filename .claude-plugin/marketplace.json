@@ -8,7 +8,7 @@
     {
       "name": "appledger",
       "source": "./plugin",
-      "description": "Honest security checks, in plain language, for apps you build with AI. Runs locally; nothing is uploaded."
+      "description": "Plain-English security checks for AI-built apps with independent scanners (Trivy, Opengrep). Source files are sent to appledger.net and deleted after the scan; secret files are never sent. Local mode available."
     }
   ]
 }

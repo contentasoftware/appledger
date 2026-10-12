@@ -8,7 +8,10 @@ non-developer can act on:
     fix-prompt.md   a ready-made request for the coding agent that built the app
     findings.json   normalized findings
 
-Everything runs on this computer. Nothing is uploaded.
+By default the project's files are checked by the hosted AppLedger service (see client.py):
+only files git would commit, never secrets files, and only after you agree once per folder
+(--list-files shows them, --yes agrees). With --local everything runs on this computer and
+nothing is uploaded. --schedule daily|weekly|off runs the check automatically.
 
 Tool locations (all optional):
     APPLEDGER_TRIVY            path to trivy            (default: on PATH, then ~/.appledger/tools)
@@ -534,6 +537,44 @@ def findings_from_sonar(issues, hotspots):
     return findings
 
 
+def findings_for_secret_files(exposed):
+    """Secrets files that git tracks or would commit. Found from file names alone: never read or sent.
+
+    exposed is upload_plan's secret_files_not_ignored: [{"path", "tracked"}].
+    """
+    findings = []
+    for item in exposed:
+        path = item["path"]
+        if item.get("tracked"):
+            findings.append({
+                "source": "AppLedger", "kind": "secret", "level": "blocker",
+                "title": f"Your repository contains a secrets file ({path})",
+                "why": "This kind of file holds passwords and keys, and it's committed to git, so everyone who can "
+                       "see the repository, and every copy of it, can read them. Deleting the file now doesn't "
+                       "remove it from the history.",
+                "fix": f"Stop tracking it (git rm --cached \"{path}\"), add it to .gitignore, and create new keys "
+                       "for everything it held: treat the old ones as leaked. Keep a copy with placeholder "
+                       "values, such as .env.example, if others need to know which settings exist.",
+                "where": path,
+                "technical": "secrets file tracked by git (matched by file name; contents not read)",
+                "topic": "secrets file tracked by git",
+            })
+        else:
+            findings.append({
+                "source": "AppLedger", "kind": "secret", "level": "important",
+                "title": f"A secrets file isn't ignored by git ({path})",
+                "why": "This kind of file holds passwords and keys. Git doesn't ignore it, so the next "
+                       "'commit everything', which AI coding tools often do, puts them into the repository "
+                       "for everyone who can see it.",
+                "fix": f"Add {path} to .gitignore (a line such as .env* covers all environment files) and check "
+                       "that it was never committed before.",
+                "where": path,
+                "technical": "secrets file not ignored by git (matched by file name; contents not read)",
+                "topic": "secrets file not ignored by git",
+            })
+    return findings
+
+
 def dedupe(findings):
     """Keep one finding per (title, file): two scanners often report the same thing."""
     seen, out = set(), []
@@ -764,29 +805,55 @@ def scan(app_dir, sonar_dir=None, code_scan=True):
     return dedupe(findings), scanners
 
 
-def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, mode=None):
+def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, mode=None,
+          confirm_upload=False, save_to_dashboard=True):
     """Check an app folder and write report.html, fix-prompt.md and findings.json.
 
-    mode "hosted" (the default) sends the project to the AppLedger scanning service, so no
-    scanners are needed locally; mode "local" runs Trivy and Opengrep on this machine.
+    mode "hosted" (the default) sends the project's files to the AppLedger scanning service, so
+    no scanners are needed locally; mode "local" runs Trivy and Opengrep on this machine.
     Set APPLEDGER_MODE to change the default. Results go to <app>/.appledger unless out_dir is given.
+
+    A hosted check only uploads a folder the user has agreed to send: it raises ConsentRequired
+    (with the upload plan) until they have, and confirm_upload=True records their agreement.
+    With a connection key and save_to_dashboard, the result is also saved to the dashboard
+    (in local mode as a summary only).
     """
+    from .client import connection_key, hosted_scan, record_check, record_payload, upload_plan
+    from .consent import ConsentRequired, give_consent, has_consent
+
     app_dir = Path(app_dir).resolve()
     if not app_dir.is_dir():
         raise ScanError(f"{app_dir} is not a folder.")
+    app_name = app_name or app_dir.name
+    mode = mode or os.environ.get("APPLEDGER_MODE", "hosted")
+    hosted = mode == "hosted" and not sonar_dir
+    plan = upload_plan(app_dir)  # also tells which secrets files git would commit
+    if hosted and not has_consent(app_dir):
+        if not confirm_upload:
+            raise ConsentRequired(
+                f"AppLedger hasn't been allowed to send {app_dir} to appledger.net yet. "
+                f"{len(plan['files'])} files would be sent; secrets files and anything git ignores stay on "
+                "this computer. Allow it once with --yes (see the files with --list-files), or check on "
+                "this computer with --local.", plan)
+        give_consent(app_dir, len(plan["files"]))
+
     out = Path(out_dir) if out_dir else app_dir / OUTPUT_DIR_NAME
     out.mkdir(parents=True, exist_ok=True)
-    app_name = app_name or app_dir.name
-
-    mode = mode or os.environ.get("APPLEDGER_MODE", "hosted")
-    if mode == "hosted" and not sonar_dir:
-        from .client import hosted_scan
-        findings, scanners = hosted_scan(app_dir)
+    usage = ai_usage_for(app_dir)
+    ledger = None
+    local_findings = findings_for_secret_files(plan["secret_files_not_ignored"])
+    if hosted:
+        findings, scanners, ledger = hosted_scan(app_dir, app_name, usage, plan, save_to_dashboard, local_findings)
     else:
         findings, scanners = scan(app_dir, sonar_dir, code_scan)
+    findings = dedupe(findings + local_findings)
 
     score = health_score(findings)
     counts = {lvl: sum(f["level"] == lvl for f in findings) for lvl in LEVELS}
+    if not hosted and save_to_dashboard and connection_key():
+        # Local mode sends no code: only the summary below, so the dashboard still shows the app.
+        ledger = record_check(record_payload({"app": app_name, "score": score, "grade": grade_for(score),
+                                              "scanners": scanners, "findings": findings}, counts, usage))
     summary = {
         "app": app_name, "score": score, "grade": grade_for(score), "scanners": scanners,
         "counts": {LEVELS[k]["label"]: v for k, v in counts.items()},
@@ -795,7 +862,8 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
         "findings": findings,
         "report": str(out / "report.html"), "fix_prompt": str(out / "fix-prompt.md"),
         "checked_at": datetime.now().isoformat(timespec="seconds"),
-        "ai_usage": ai_usage_for(app_dir),
+        "ai_usage": usage,
+        "ledger": ledger,
     }
     (out / "findings.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     write_fix_prompt(findings, app_name, scanners, out / "fix-prompt.md")
@@ -804,7 +872,53 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
     return summary
 
 
+def print_plan(plan):
+    """--list-files: everything a hosted check would send, and what stays on this computer and why."""
+    from .client import human_size
+    print(f"A hosted check sends these {len(plan['files'])} files ({human_size(plan['bytes'])}) "
+          f"from {plan['folder']} to appledger.net:")
+    for rel in plan["files"]:
+        print(f"  {rel}")
+    if plan["excluded"]:
+        print(f"\nNever sent ({len(plan['excluded'])}):")
+        width = min(60, max(len(e["path"]) for e in plan["excluded"]))
+        for e in plan["excluded"]:
+            print(f"  {e['path']:<{width}}  {e['reason']}")
+    exposed = plan["secret_files_not_ignored"]
+    if exposed:
+        print("\nSecrets files git would commit (they are still never sent):")
+        for item in exposed:
+            print(f"  {item['path']}  " + ("tracked by git" if item["tracked"] else "not ignored by git"))
+    if not plan["git"]:
+        print("\nThis folder isn't in a git repository, so its .gitignore files decided what counts as the project.")
+
+
+def ask_consent(plan):
+    """Show what would be sent and ask once. True if the user says yes."""
+    from .client import human_size
+    n = len(plan["files"])
+    secrets = [e["path"] for e in plan["excluded"] if e["reason"] == "secret file"]
+    print(f"AppLedger checks {plan['folder']} on its service at appledger.net: {n} files "
+          f"({human_size(plan['bytes'])}) are sent over HTTPS, scanned and deleted right after.")
+    if secrets:
+        more = f" and {len(secrets) - 5} more" if len(secrets) > 5 else ""
+        print(f"Secrets files are never sent: {', '.join(secrets[:5])}{more}.")
+    others = len(plan["excluded"]) - len(secrets)
+    if others:
+        print(f"{others} other files or folders are left out (ignored by git, media or too large).")
+    print("See every file with --list-files, or check on this computer instead with --local.")
+    try:
+        answer = input(f"Send these {n} files to appledger.net for checking? [y/N] ")
+    except EOFError:
+        return False
+    return answer.strip().lower() in ("y", "yes")
+
+
 def main():
+    if sys.argv[1:2] == ["mcp"]:
+        # `appledger mcp` (or `uvx appledger mcp`) runs the MCP server, as MCP registries expect.
+        from .server import main as mcp_main
+        return mcp_main()
     ap = argparse.ArgumentParser(prog="appledger", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("app_dir", nargs="?", default=".")
@@ -817,9 +931,34 @@ def main():
                     help="only show how many AI tokens, and what they'd cost, went into this folder")
     ap.add_argument("--local", action="store_true",
                     help="run Trivy and Opengrep on this machine instead of the AppLedger service")
+    ap.add_argument("--yes", action="store_true",
+                    help="allow sending this folder's files to the AppLedger service without asking")
+    ap.add_argument("--list-files", action="store_true",
+                    help="show which files a hosted check would send, and which it leaves out, then stop")
+    ap.add_argument("--no-dashboard", action="store_true", help="don't save this check to your AppLedger dashboard")
+    ap.add_argument("--quiet", action="store_true", help="only print a one-line summary, and errors")
+    ap.add_argument("--schedule", choices=["daily", "weekly", "off"],
+                    help="check this folder automatically every day or week at 09:00, or stop doing so")
+    ap.add_argument("--schedules", action="store_true", help="list the scheduled checks on this computer")
+    ap.add_argument("--connect", metavar="KEY",
+                    help="save a connection key from https://appledger.net/app/ so checks appear in your dashboard")
+    ap.add_argument("--disconnect", action="store_true", help="forget the saved connection key")
     args = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles default to a legacy code page
+
+    if args.connect or args.disconnect:
+        from .client import DASHBOARD_URL, forget_connection_key, save_connection_key
+        if args.disconnect:
+            forget_connection_key()
+            print("Disconnected. Checks from this computer no longer go to an AppLedger dashboard.")
+            return
+        try:
+            where = save_connection_key(args.connect)
+        except ScanError as e:
+            sys.exit(str(e))
+        print(f"Connected. Key saved in {where}. Every check from this computer now appears in {DASHBOARD_URL}")
+        return
 
     if args.ai_cost:
         usage = ai_usage_for(Path(args.app_dir).resolve())
@@ -837,14 +976,69 @@ def main():
         for tool, where in doctor().items():
             print(f"{tool:15} {where or 'not found'}")
         return
+
+    from .client import upload_plan
+    from .consent import ConsentRequired, give_consent, has_consent, interactive
+    mode = "local" if args.local else os.environ.get("APPLEDGER_MODE", "hosted")
+
+    if args.schedules:
+        from .schedule import list_schedules
+        tasks = list_schedules()
+        if not tasks:
+            print("No scheduled AppLedger checks on this computer.")
+        for t in tasks:
+            print(f"{t['folder'] or t['name']}  ({t['mode']} check, next run {t['next_run']}, task {t['name']})")
+        return
     try:
-        result = check(args.app_dir, args.out, args.app_name, args.sonar_dir, not args.no_code_scan,
-                       mode="local" if args.local else None)
+        if args.list_files:
+            print_plan(upload_plan(args.app_dir))
+            if mode == "local":
+                print("\nYou're in local mode: a local check sends none of these files.")
+            return
+        if args.schedule:
+            from .schedule import schedule
+            if args.schedule != "off" and mode == "hosted" and not has_consent(args.app_dir):
+                plan = upload_plan(args.app_dir)
+                if not args.yes and not (interactive() and ask_consent(plan)):
+                    sys.exit("Not scheduled: scheduled checks send the folder to appledger.net, which needs your "
+                             "go-ahead. Run again with --yes, or schedule local checks with --local.")
+                give_consent(args.app_dir, len(plan["files"]))
+            extra = (["--no-dashboard"] if args.no_dashboard else []) + (
+                ["--app-name", args.app_name] if args.app_name else [])
+            done = schedule(args.app_dir, args.schedule, local=mode == "local", extra=extra)
+            if args.schedule == "off":
+                print(f"Stopped the scheduled check of {done['folder']}." if done["removed"]
+                      else f"There was no scheduled check of {done['folder']}.")
+            else:
+                print(f"Scheduled a {'local' if mode == 'local' else 'hosted'} check of {done['folder']} "
+                      f"{done['frequency']} at 09:00 ({done['name']}). Results go to the folder's .appledger "
+                      "report" + ("" if args.no_dashboard else " and, if connected, your dashboard") + ".")
+            return
+
+        def run(confirm):
+            return check(args.app_dir, args.out, args.app_name, args.sonar_dir, not args.no_code_scan,
+                         mode="local" if args.local else None, confirm_upload=confirm,
+                         save_to_dashboard=not args.no_dashboard)
+        try:
+            result = run(args.yes)
+        except ConsentRequired as e:
+            if not interactive():
+                sys.exit(str(e))
+            if not ask_consent(e.plan):
+                sys.exit("Nothing was sent. Run with --local to check on this computer instead.")
+            result = run(True)
     except ScanError as e:
         sys.exit(str(e))
     print(f"{result['app']}: {result['grade']} · score {result['score']}/100 · "
           + " · ".join(f"{v} {k.lower()}" for k, v in result["counts"].items()))
+    ledger = result.get("ledger") or {}
+    if ledger and not ledger.get("recorded"):
+        print(f"Couldn't save to your AppLedger dashboard: {ledger.get('error', 'no reason given')}", file=sys.stderr)
+    if args.quiet:
+        return
     print(f"Report: {result['report']}")
+    if ledger.get("recorded"):
+        print(f"Saved to your AppLedger dashboard: {ledger['dashboard']}")
 
 
 if __name__ == "__main__":

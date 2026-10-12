@@ -1,0 +1,12 @@
+{
+  "name": "appledger",
+  "version": "0.1.0",
+  "description": "Honest security checks, in plain language, for apps you build with AI. Your project's source files are sent to the AppLedger scanning service, checked with independent scanners (Trivy, Opengrep) and deleted right after. Each problem is explained in everyday words, with a fix request for your agent.",
+  "author": {
+    "name": "Contenta Software",
+    "url": "https://www.contenta-software.com/appledger/"
+  },
+  "homepage": "https://www.contenta-software.com/appledger/",
+  "license": "MIT",
+  "keywords": ["security", "vibe-coding", "trivy", "opengrep", "code-review", "plain-language"]
+}

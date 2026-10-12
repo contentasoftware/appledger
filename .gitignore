@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# AppLedger check output
+.appledger/
+
+# Local deploy settings (server, key, site)
+deploy/.env.local
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

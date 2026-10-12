@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "appledger"
+version = "0.1.0"
+description = "Honest security checks, in plain language, for apps built with AI."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Contenta Software" }]
+keywords = ["security", "mcp", "claude", "codex", "trivy", "opengrep", "vibe-coding"]
+dependencies = [
+    "mcp>=1.20,<2",
+    "pyyaml>=6",
+    "packaging>=23",
+    "anyio>=4",
+]
+
+[project.urls]
+Homepage = "https://www.contenta-software.com/appledger/"
+
+[project.scripts]
+appledger = "appledger.scanner:main"
+appledger-mcp = "appledger.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/appledger"]

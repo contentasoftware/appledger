@@ -1,0 +1,14 @@
+{
+  "name": "appledger",
+  "owner": {
+    "name": "Contenta Software",
+    "url": "https://www.contenta-software.com/appledger/"
+  },
+  "plugins": [
+    {
+      "name": "appledger",
+      "source": "./plugin",
+      "description": "Honest security checks, in plain language, for apps you build with AI. Runs locally; nothing is uploaded."
+    }
+  ]
+}

@@ -254,14 +254,39 @@ def run_trivy(app_dir):
     return json.loads(proc.stdout)
 
 
+# Trivy secret rules for keys that are public by design: not reported.
+PUBLIC_BY_DESIGN = {"stripe-publishable-token"}
+# Opengrep rule categories that are about security. Style, translation and other code-quality rules are
+# left out: AppLedger is a security check, and they would bury real problems.
+SECURITY_CATEGORIES = {"security", ""}
+
+
 def findings_from_trivy(data):
     findings = []
     for result in data.get("Results", []):
         target = result.get("Target", "")
 
         for s in result.get("Secrets") or []:
+            rule = s["RuleID"]
+            if rule in PUBLIC_BY_DESIGN:
+                continue  # keys meant to be public, such as Stripe publishable keys
+            if rule == "jwt-token":
+                # Often a Supabase anon key, which is public by design: worth checking, not a leak on sight.
+                findings.append({
+                    "source": "Trivy", "kind": "secret", "level": "important",
+                    "title": "Your code contains a login token (JWT)",
+                    "why": "If this is a Supabase anon or publishable key, it is meant to be public and is only safe "
+                           "when row-level security is switched on and correct for every table. If it's a "
+                           f"service_role key or another private token, anyone who sees line {s.get('StartLine')} "
+                           f"of {target} can use it.",
+                    "fix": "Check which token it is. A private token must move to the platform's secret store and be "
+                           "replaced. A Supabase anon key can stay, but check row-level security in Supabase.",
+                    "where": f"{target}:{s.get('StartLine')}",
+                    "technical": f"{rule} ({s['Severity']})",
+                })
+                continue
             name, power = SECRET_NAMES.get(
-                s["RuleID"], (s.get("Title", "a password or key"), "can use it as if they were you"))
+                rule, (s.get("Title", "a password or key"), "can use it as if they were you"))
             findings.append({
                 "source": "Trivy", "kind": "secret", "level": "blocker",
                 "title": f"Your code contains {name}",
@@ -475,6 +500,8 @@ def findings_from_opengrep(data, app_dir):
             path = r["path"]
         where = f"{path}:{r['start']['line']}"
         technical = f"{rule} ({r['extra'].get('severity', '')})"
+        if str(meta.get("category") or "").lower() not in SECURITY_CATEGORIES and rule not in CODE_SECRET_RULES:
+            continue
         if rule in CODE_SECRET_RULES:
             name, power = SECRET_NAMES[CODE_SECRET_RULES[rule]]
             findings.append({

@@ -244,7 +244,7 @@ def run_trivy(app_dir):
     skip = [arg for d in sorted(SKIP_DIRS) for arg in ("--skip-dirs", d)]
     offline = ["--skip-db-update", "--skip-java-db-update", "--offline-scan"] \
         if os.environ.get("APPLEDGER_TRIVY_OFFLINE") else []
-    proc = subprocess.run(
+    proc = subprocess.run(  # nosemgrep -- fixed argument list, no shell
         [trivy, "fs", "--quiet", "--scanners", "vuln,secret,misconfig", *skip, *offline,
          "--format", "json", str(app_dir)],
         capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL,
@@ -353,18 +353,34 @@ def findings_from_trivy(data):
 
 # Opengrep (the open-source fork of Semgrep) with rule folders picked per language found in the app.
 RULES_BY_SUFFIX = {
-    ".py": ["python/lang/security", "python/flask", "python/django", "python/fastapi", "python/requests",
-            "python/sqlalchemy", "python/jwt"],
-    ".js": ["javascript/lang/security", "javascript/express", "javascript/browser"],
-    ".jsx": ["javascript/lang/security", "javascript/react"],
-    ".ts": ["typescript", "javascript/lang/security", "javascript/express"],
-    ".tsx": ["typescript/react", "javascript/lang/security"],
+    ".py": ["python/lang/security"],
+    ".js": ["javascript/lang/security", "javascript/browser"],
+    ".jsx": ["javascript/lang/security"],
+    ".ts": ["typescript", "javascript/lang/security"],
+    ".tsx": ["javascript/lang/security"],
     ".php": ["php/lang/security"],
     ".go": ["go/lang/security"],
-    ".java": ["java/lang/security", "java/spring"],
-    ".rb": ["ruby/lang/security", "ruby/rails"],
+    ".java": ["java/lang/security"],
+    ".rb": ["ruby/lang/security"],
     ".tf": ["terraform"],
 }
+# Framework rules run only when the project depends on the framework, so a static page in a Python
+# repo isn't judged by Django's template rules: rule folder -> (file types, words in the manifests).
+FRAMEWORK_RULES = {
+    "python/flask": ({".py"}, ("flask",)),
+    "python/django": ({".py", ".html"}, ("django",)),
+    "python/fastapi": ({".py"}, ("fastapi",)),
+    "python/requests": ({".py"}, ("requests",)),
+    "python/sqlalchemy": ({".py"}, ("sqlalchemy",)),
+    "python/jwt": ({".py"}, ("pyjwt", "python-jose", "jwt")),
+    "javascript/express": ({".js", ".ts"}, ('"express"',)),
+    "javascript/react": ({".jsx", ".js"}, ('"react"',)),
+    "typescript/react": ({".tsx"}, ('"react"',)),
+    "java/spring": ({".java"}, ("springframework", "spring-boot")),
+    "ruby/rails": ({".rb"}, ("rails",)),
+}
+MANIFESTS = {"requirements.txt", "requirements-dev.txt", "pyproject.toml", "pipfile", "setup.py", "setup.cfg",
+             "package.json", "gemfile", "pom.xml", "build.gradle", "build.gradle.kts", "go.mod"}
 ALWAYS_RULES = ["generic/secrets"]
 
 # Opengrep secret rules mapped to the matching Trivy rule, so both name the secret the same way.
@@ -430,8 +446,14 @@ def opengrep_rules_root():
 def rule_folders(app_dir):
     files = list(app_files(app_dir))
     folders = list(ALWAYS_RULES)
-    for suffix in sorted({p.suffix.lower() for p in files}):
+    suffixes = {p.suffix.lower() for p in files}
+    for suffix in sorted(suffixes):
         folders += RULES_BY_SUFFIX.get(suffix, [])
+    manifests = " ".join(p.read_text(encoding="utf-8", errors="replace").lower()
+                         for p in files if p.name.lower() in MANIFESTS and p.stat().st_size < 1_000_000)
+    for folder, (types, words) in FRAMEWORK_RULES.items():
+        if suffixes & types and any(w in manifests for w in words):
+            folders.append(folder)
     if any(p.name.lower() == "dockerfile" or p.name.lower().endswith(".dockerfile") for p in files):
         folders.append("dockerfile")
     return [f for f in dict.fromkeys(folders) if (opengrep_rules_root() / f).exists()]
@@ -446,7 +468,7 @@ def rule_pack(app_dir):
     import yaml  # only needed when a pack has to be built
 
     folders = rule_folders(app_dir)
-    key = hashlib.sha256(("v2|" + "|".join(folders)).encode()).hexdigest()[:12]
+    key = hashlib.sha256(("v3|" + "|".join(folders)).encode()).hexdigest()[:12]
     pack = APPLEDGER_HOME / "cache" / f"rules-{key}.yaml"
     if pack.exists():
         return pack
@@ -478,7 +500,7 @@ def run_opengrep(app_dir):
         raise ScanError(f"Opengrep rules not found at {opengrep_rules_root()}. Run: git clone --depth 1 "
                         f"https://github.com/opengrep/opengrep-rules.git \"{opengrep_rules_root()}\"")
     excludes = [arg for d in sorted(SKIP_DIRS) for arg in ("--exclude", d)]
-    proc = subprocess.run([opengrep, "scan", "--config", str(rule_pack(app_dir)), *excludes,
+    proc = subprocess.run([opengrep, "scan", "--config", str(rule_pack(app_dir)), *excludes,  # nosemgrep -- argument list, no shell
                            "--json", "--quiet", str(app_dir)],
                           capture_output=True, text=True, encoding="utf-8", stdin=subprocess.DEVNULL)
     if not proc.stdout.strip():
@@ -537,9 +559,11 @@ def findings_from_opengrep(data, app_dir):
 
 
 def sonar_get(base, token, path):
-    req = urllib.request.Request(base.rstrip("/") + path)
+    if not base.lower().startswith(("https://", "http://")):
+        raise ScanError("APPLEDGER_SONAR_URL must start with https:// or http://.")
+    req = urllib.request.Request(base.rstrip("/") + path)  # nosemgrep -- scheme checked above
     req.add_header("Authorization", "Basic " + base64.b64encode(f"{token}:".encode()).decode())
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:  # nosemgrep -- https/http checked above
         return json.load(resp)
 
 

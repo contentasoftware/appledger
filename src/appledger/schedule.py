@@ -82,7 +82,7 @@ def cron_line(app_dir, frequency, local=False, extra=(), pythonpath=None, python
 
 def run(args, input_text=None):
     try:
-        proc = subprocess.run(args, capture_output=True, text=True, errors="replace", input=input_text,
+        proc = subprocess.run(args, capture_output=True, text=True, errors="replace", input=input_text,  # nosemgrep -- argument list built by this module, no shell
                               stdin=None if input_text is not None else subprocess.DEVNULL)
     except OSError as e:
         raise ScanError(f"Couldn't run {args[0]} to set up the schedule ({e}).")

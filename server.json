@@ -3,7 +3,7 @@
   "name": "net.appledger/appledger",
   "title": "AppLedger",
   "description": "Plain-English security checks for AI-built apps (Trivy + Opengrep), with fix requests for agents",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "websiteUrl": "https://appledger.net/",
   "repository": {
     "url": "https://github.com/contentasoftware/appledger",
@@ -23,7 +23,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "appledger",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

@@ -190,7 +190,9 @@ def scanner_status() -> dict:
     installed on this computer), and how to fix anything that is missing."""
     if hosted():
         try:
-            with urllib.request.urlopen(API_URL, timeout=15) as resp:
+            if not API_URL.lower().startswith(("https://", "http://")):
+                raise ValueError("APPLEDGER_API must start with https://")
+            with urllib.request.urlopen(API_URL, timeout=15) as resp:  # nosemgrep -- scheme checked above
                 service = json.load(resp)
             return {"version": __version__, "mode": "hosted", "service": API_URL, "reachable": bool(service.get("ok")),
                     "dashboard_connected": bool(connection_key())}

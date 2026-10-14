@@ -2,5 +2,5 @@
 
 from .scanner import ScanError, check, doctor
 
-__version__ = "0.2.4"
+__version__ = "0.2.5"
 __all__ = ["ScanError", "check", "doctor", "__version__"]

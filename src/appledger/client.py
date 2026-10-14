@@ -221,9 +221,12 @@ def hosted_scan(app_dir, app_name=None, plan=None, save_to_dashboard=True, local
     }
     if key:
         headers["X-AppLedger-Key"] = key
-    req = urllib.request.Request(API_URL, data=multipart(boundary, fields, data), method="POST", headers=headers)
+    if not API_URL.lower().startswith(("https://", "http://")):
+        raise ScanError("APPLEDGER_API must start with https:// (or http:// for a local test server).")
+    req = urllib.request.Request(API_URL, data=multipart(boundary, fields, data), method="POST",  # nosemgrep -- scheme checked above
+                                 headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=180) as resp:  # nosemgrep -- https/http checked above
             result = json.load(resp)
     except urllib.error.HTTPError as e:
         raise ScanError(error_message(e) or f"The AppLedger service answered with an error ({e.code}). "
@@ -298,12 +301,14 @@ def record_check(payload, key=None):
     if not key:
         return {"recorded": False, "error": "This computer isn't connected to an AppLedger dashboard."}
     url = os.environ.get("APPLEDGER_RECORD_API", DEFAULT_RECORD_API)
+    if not url.lower().startswith(("https://", "http://")):
+        return {"recorded": False, "error": "APPLEDGER_RECORD_API must start with https://."}
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST", headers={
         "Content-Type": "application/json", "Accept": "application/json",
         "User-Agent": f"appledger/{__version__}", "X-AppLedger-Key": key,
     })
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosemgrep -- https/http checked above
             result = json.load(resp)
     except urllib.error.HTTPError as e:
         return {"recorded": False, "error": error_message(e) or f"The dashboard answered with an error ({e.code})."}

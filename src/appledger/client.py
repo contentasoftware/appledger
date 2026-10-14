@@ -10,6 +10,11 @@ the server right after.
 In local mode nothing is uploaded; with a connection key, record_check sends only a summary
 (name, score, problem counts, the problems' levels and titles) to the dashboard. Never the code
 or file paths.
+
+A hosted check without a connection key sends the app's name too, and gets back a save link: the
+service keeps the check's summary (name, score, the problems' levels and titles) for 24 hours so
+the user can save it to a free account, then deletes it. With save_to_dashboard=False
+(--no-dashboard) the name isn't sent and no link is made.
 """
 
 import io
@@ -193,19 +198,21 @@ def error_message(e):
 
 
 def hosted_scan(app_dir, app_name=None, plan=None, save_to_dashboard=True, local_findings=None):
-    """Returns (findings, scanner names, ledger) from the AppLedger service.
+    """Returns (findings, scanner names, ledger, save link) from the AppLedger service.
 
     Sends only the files in upload_plan (pass plan to reuse one already shown to the user). With
-    a connection key and save_to_dashboard, the app's name and score are also
-    saved to the organisation's dashboard, and ledger says where. Otherwise ledger is None and
-    the key isn't sent. local_findings (found on this computer, such as committed secrets files)
-    are sent as level and title only, so the dashboard's score matches the local report.
+    save_to_dashboard, the app's name and local_findings (found on this computer, such as committed
+    secrets files) are sent too, as level and title only, so a saved score matches the local report:
+    - with a connection key, the result is saved to the organisation's dashboard and ledger says where;
+    - without one, the service returns a save link ({"url", "expires_in_hours"}) that saves the result
+      to a free account; ledger is None.
+    Without save_to_dashboard neither the key nor the name is sent, and ledger and save link are None.
     """
     data, count, skipped = build_zip(app_dir, plan)
     boundary = uuid.uuid4().hex
     key = connection_key() if save_to_dashboard else None
-    fields = {"app_name": clean_name(app_name, app_dir)} if key else {}
-    if key and local_findings:
+    fields = {"app_name": clean_name(app_name, app_dir)} if save_to_dashboard else {}
+    if save_to_dashboard and local_findings:
         fields["local_findings"] = json.dumps([{"level": f["level"], "title": summary_title(f)} for f in local_findings][:20])
     headers = {
         "Content-Type": f"multipart/form-data; boundary={boundary}",
@@ -226,7 +233,22 @@ def hosted_scan(app_dir, app_name=None, plan=None, save_to_dashboard=True, local
                         "Check your internet connection, or run in local mode.")
     if not result.get("ok"):
         raise ScanError(result.get("error", "The AppLedger service couldn't check this project."))
-    return result["findings"], result["scanners"], result.get("ledger")
+    link = save_link(result) if save_to_dashboard and not key else None
+    return result["findings"], result["scanners"], result.get("ledger"), link
+
+
+def save_link(result):
+    """The save link in a hosted check's answer, as {"url", "expires_in_hours"}, or None.
+
+    Only web links are accepted, so a report never gets a link of another kind.
+    """
+    claim = result.get("claim") if isinstance(result, dict) else None
+    url = claim.get("url") if isinstance(claim, dict) else None
+    if not isinstance(url, str) or not url.startswith(("https://", "http://")) or len(url) > 500 or any(
+            c.isspace() for c in url):
+        return None
+    hours = claim.get("expires_in_hours")
+    return {"url": url, "expires_in_hours": hours if isinstance(hours, int) and 0 < hours <= 168 else 24}
 
 
 def summary_title(finding, limit=200):

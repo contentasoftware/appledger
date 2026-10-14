@@ -41,7 +41,9 @@ mcp = FastMCP(
         "the user that preview, ask whether to send the files, and only if they say yes call check_app "
         "again with confirm_upload=true. Never set confirm_upload on your own. preview_upload lists every "
         "file at any time. Then explain the most serious problems first in everyday words, and offer to "
-        "fix them using get_fix_prompt. After fixing, run check_app again and show the new score."
+        "fix them using get_fix_prompt. After fixing, run check_app again and show the new score. "
+        "If check_app returns save_link, mention it once, briefly, at the end: the user can save this result "
+        "to a free AppLedger ledger with that link, which works for 24 hours. Don't push it or repeat it."
     ),
 )
 
@@ -63,7 +65,9 @@ async def check_app(path: str, app_name: str | None = None, confirm_upload: bool
     show the preview to the user and ask. Only after they agree, call again with confirm_upload=true;
     later checks of that folder don't ask again. Results are written to <path>/.appledger (report.html,
     fix-prompt.md, findings.json). Returns the score (0-100), grade, who may use the app right now, and
-    every finding with why it matters and what to do.
+    every finding with why it matters and what to do. A hosted check from a computer that isn't connected
+    to a dashboard also returns save_link: a link (valid 24 hours, works once) that saves this result to a
+    free AppLedger ledger. Offer it to the user once, in one line.
 
     Args:
         path: absolute path to the app's folder.
@@ -97,9 +101,13 @@ async def check_app(path: str, app_name: str | None = None, confirm_upload: bool
         dashboard = ledger  # {"recorded": true, "app", "dashboard"}, or {"recorded": false, "error"}
     elif connection_key():
         dashboard = None
+    elif result.get("save_link"):
+        dashboard = ("Not connected. save_link saves this result to a free AppLedger ledger "
+                     f"(works once, for {result['save_link']['expires_in_hours']} hours).")
     else:
         dashboard = (f"Not connected. A free account at {DASHBOARD_URL} keeps every app, its owner and grade "
                      "in one ledger.")
+    extra = {"save_link": result["save_link"]["url"]} if result.get("save_link") else {}
     return {
         "ok": True,
         "app": result["app"], "score": result["score"], "grade": result["grade"],
@@ -109,6 +117,7 @@ async def check_app(path: str, app_name: str | None = None, confirm_upload: bool
         "report": result["report"], "fix_prompt": result["fix_prompt"],
         "checked_by": "AppLedger scanning service" if hosted() else "scanners on this computer",
         "dashboard": dashboard,
+        **extra,
     }
 
 

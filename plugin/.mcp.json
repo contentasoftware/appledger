@@ -2,7 +2,7 @@
   "mcpServers": {
     "appledger": {
       "command": "uvx",
-      "args": ["--from", "appledger==0.2.2", "appledger-mcp"]
+      "args": ["--from", "appledger==0.2.3", "appledger-mcp"]
     }
   }
 }

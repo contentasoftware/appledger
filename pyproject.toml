@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "appledger"
-version = "0.2.2"
+version = "0.2.3"
 description = "The ledger for the AI app explosion: honest security checks, in plain language, for apps your people build with AI."
 readme = "README.md"
 license = "MIT"

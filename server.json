@@ -3,7 +3,7 @@
   "name": "net.appledger/appledger",
   "title": "AppLedger",
   "description": "Plain-English security checks for AI-built apps (Trivy + Opengrep), with fix requests for agents",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "websiteUrl": "https://appledger.net/",
   "repository": {
     "url": "https://github.com/contentasoftware/appledger",
@@ -23,7 +23,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "appledger",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -47,7 +47,7 @@
         },
         {
           "name": "APPLEDGER_KEY",
-          "description": "Optional dashboard connection key (al_...). Without it, no summary is saved.",
+          "description": "Optional dashboard connection key (al_...). Without it, nothing goes to a dashboard; a hosted check returns a link that saves its result to a free account (the summary is kept up to 24 hours).",
           "isRequired": false,
           "isSecret": true
         }

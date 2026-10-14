@@ -31,7 +31,8 @@ The plugin starts its tools with `uv`. If `preview_upload` and `check_app` don't
    `curl -LsSf https://astral.sh/uv/install.sh | sh`. Run it only if they agree, then ask them to start a new Claude Code session.
 2. Or use the command line instead, which works without the plugin's tools: `python -m pip install appledger`,
    then `python -m appledger PATH --list-files` to show what would be sent, ask as in step 3, and run
-   `python -m appledger PATH --yes` once they agree. Read the results from `PATH/.appledger/findings.json`.
+   `python -m appledger PATH --yes` once they agree. Read the results from `PATH/.appledger/findings.json`
+   (its `save_link`, if present, is the save link described under Dashboard).
    To connect a dashboard this way, the user runs `python -m appledger --connect KEY` themselves.
 
 ## 2. Explain the result
@@ -57,7 +58,7 @@ Then ask: "Do you want me to fix these?"
 
 ## Dashboard
 
-If `check_app` returns `dashboard` with `recorded: true`, say in one line that the app is saved in their AppLedger dashboard and give the link. If it isn't connected and they want a dashboard, point them to https://appledger.net/app/ → "Connect a computer". If the user gives you a connection key (it starts with `al_`), call `connect_dashboard` with it. Never invent a key, and only use one the user gave you in this conversation.
+If `check_app` returns `dashboard` with `recorded: true`, say in one line that the app is saved in their AppLedger dashboard and give the link. If it returns `save_link`, mention it once, in one line at the end, without pushing: "If you want to keep this result, you can save it to a free AppLedger ledger with this link (it works for 24 hours): <save_link>." Don't repeat it after later checks in the same conversation unless asked. Opening the link lets them create an account or log in, and the result is saved; the page then offers a key so later checks are saved by themselves. If it isn't connected and they want a dashboard, point them to https://appledger.net/app/ → "Connect a computer". If the user gives you a connection key (it starts with `al_`), call `connect_dashboard` with it. Never invent a key, and only use one the user gave you in this conversation.
 
 ## Scheduled checks
 

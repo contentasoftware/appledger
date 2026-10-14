@@ -13,6 +13,9 @@ only files git would commit, never secrets files, and only after you agree once 
 (--list-files shows them, --yes agrees). With --local everything runs on this computer and
 nothing is uploaded. --schedule daily|weekly|off runs the check automatically.
 
+Without a connection key, a hosted check also prints a save link: open it within 24 hours to save
+the result to a free AppLedger ledger (the service keeps the summary, never the code, until then).
+
 Tool locations (all optional):
     APPLEDGER_TRIVY            path to trivy            (default: on PATH, then ~/.appledger/tools)
     APPLEDGER_OPENGREP         path to opengrep         (default: on PATH, then ~/.appledger/tools)
@@ -647,7 +650,8 @@ def write_fix_prompt(findings, app_name, scanners, path):
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_report(findings, app_name, scanners, path):
+def write_report(findings, app_name, scanners, path, claim=None):
+    """report.html. claim: the save link of a hosted check without a connection key, shown as a call to action."""
     e = html.escape
     score = health_score(findings)
     grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 55 else "D" if score >= 30 else "F"
@@ -700,6 +704,10 @@ h1,h2,h3 {{ margin:0; line-height:1.2 }} p {{ margin:0 }}
 button {{ font:inherit; padding:8px 14px; border-radius:6px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer }}
 button:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px }}
 .fixbox {{ background:var(--surface); border:1px dashed var(--accent); border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:10px }}
+.savebox {{ background:var(--surface); border:2px solid var(--accent); border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start }}
+.savebox a.cta {{ display:inline-block; background:var(--accent); color:var(--surface); font-weight:700; text-decoration:none; padding:10px 16px; border-radius:6px }}
+.savebox a.cta:focus-visible {{ outline:2px solid var(--ink); outline-offset:2px }}
+.savebox small {{ color:var(--muted) }}
 @media (max-width:620px) {{ .summary {{ grid-template-columns:1fr }} .tiers li {{ grid-template-columns:1fr; gap:2px }} }}
 </style></head>
 <body><main>
@@ -715,7 +723,7 @@ button:focus-visible {{ outline:2px solid var(--accent); outline-offset:2px }}
         <span class="pill minor">{counts['minor']} good to know</span>
       </div></div>
   </section>
-  <section><h2 style="margin-bottom:12px">Who can use it right now</h2><ul class="tiers">{tiers}</ul></section>
+  <section><h2 style="margin-bottom:12px">Who can use it right now</h2><ul class="tiers">{tiers}</ul></section>{save_box(claim)}
   <section class="fixbox">
     <h2>Fix it for me</h2>
     <p>AppLedger wrote a fix request for the coding agent that built this app (Claude Code, Cursor, Codex…). Open <code>fix-prompt.md</code>, paste it into the agent, then run the check again.</p>
@@ -737,6 +745,22 @@ btn.addEventListener('click', () => {{
 </script>
 </body></html>"""
     Path(path).write_text(page, encoding="utf-8")
+
+
+def save_box(claim):
+    """The report's call to action for a save link, or nothing."""
+    if not claim:
+        return ""
+    e = html.escape
+    hours = int(claim.get("expires_in_hours") or 24)
+    return f"""
+  <section class="savebox">
+    <h2>Keep this result</h2>
+    <p>Save it to a free AppLedger ledger: every app with its grade and history in one place, so you can see it improve.</p>
+    <a class="cta" href="{e(claim['url'])}" rel="noopener noreferrer">Save this result</a>
+    <small>The link works once, for {hours} hours after the check. Until then AppLedger keeps this check's summary
+      (the app's name, its score and the problems' levels and titles, never the code); after that it is deleted.</small>
+  </section>"""
 
 
 def doctor():
@@ -785,7 +809,8 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
     A hosted check only uploads a folder the user has agreed to send: it raises ConsentRequired
     (with the upload plan) until they have, and confirm_upload=True records their agreement.
     With a connection key and save_to_dashboard, the result is also saved to the dashboard
-    (in local mode as a summary only).
+    (in local mode as a summary only). A hosted check without a key returns save_link
+    ({"url", "expires_in_hours"}): opening it saves the result to a free account.
     """
     from .client import connection_key, hosted_scan, record_check, record_payload, upload_plan
     from .consent import ConsentRequired, give_consent, has_consent
@@ -808,10 +833,10 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
 
     out = Path(out_dir) if out_dir else app_dir / OUTPUT_DIR_NAME
     out.mkdir(parents=True, exist_ok=True)
-    ledger = None
+    ledger = claim = None
     local_findings = findings_for_secret_files(plan["secret_files_not_ignored"])
     if hosted:
-        findings, scanners, ledger = hosted_scan(app_dir, app_name, plan, save_to_dashboard, local_findings)
+        findings, scanners, ledger, claim = hosted_scan(app_dir, app_name, plan, save_to_dashboard, local_findings)
     else:
         findings, scanners = scan(app_dir, sonar_dir, code_scan)
     findings = dedupe(findings + local_findings)
@@ -831,10 +856,11 @@ def check(app_dir, out_dir=None, app_name=None, sonar_dir=None, code_scan=True, 
         "report": str(out / "report.html"), "fix_prompt": str(out / "fix-prompt.md"),
         "checked_at": datetime.now().isoformat(timespec="seconds"),
         "ledger": ledger,
+        "save_link": claim,
     }
     (out / "findings.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     write_fix_prompt(findings, app_name, scanners, out / "fix-prompt.md")
-    write_report(findings, app_name, scanners, out / "report.html")
+    write_report(findings, app_name, scanners, out / "report.html", claim)
     (out / ".gitignore").write_text("*\n", encoding="utf-8")  # keep reports out of version control
     return summary
 
@@ -968,10 +994,14 @@ def main():
                       "report" + ("" if args.no_dashboard else " and, if connected, your dashboard") + ".")
             return
 
+        from .client import connection_key
+
         def run(confirm):
             return check(args.app_dir, args.out, args.app_name, args.sonar_dir, not args.no_code_scan,
                          mode="local" if args.local else None, confirm_upload=confirm,
-                         save_to_dashboard=not args.no_dashboard)
+                         # A quiet run without a dashboard key (a scheduled check) asks for no save link:
+                         # nobody would see it, so the server keeps nothing.
+                         save_to_dashboard=not args.no_dashboard and not (args.quiet and not connection_key()))
         try:
             result = run(args.yes)
         except ConsentRequired as e:
@@ -992,6 +1022,10 @@ def main():
     print(f"Report: {result['report']}")
     if ledger.get("recorded"):
         print(f"Saved to your AppLedger dashboard: {ledger['dashboard']}")
+    link = result.get("save_link")
+    if link:
+        print(f"Save this result to a free AppLedger ledger (link works for {link['expires_in_hours']} hours): "
+              f"{link['url']}")
 
 
 if __name__ == "__main__":

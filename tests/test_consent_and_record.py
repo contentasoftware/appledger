@@ -39,10 +39,12 @@ def make_app():
 
 class FakeService(BaseHTTPRequestHandler):
     bodies = []
+    extra = {}  # added to every answer, such as a save link
 
     def do_POST(self):
         FakeService.bodies.append(self.rfile.read(int(self.headers["Content-Length"])))
-        body = json.dumps({"ok": True, "findings": [FAKE_FINDING], "scanners": ["Trivy", "Opengrep"]}).encode()
+        body = json.dumps({"ok": True, "findings": [FAKE_FINDING], "scanners": ["Trivy", "Opengrep"],
+                           **FakeService.extra}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -250,6 +252,100 @@ def test_no_dashboard_skips_recording_and_key():
         scanner.check(app, mode="hosted", confirm_upload=True, save_to_dashboard=False)
     req = urlopen.call_args[0][0]
     assert req.get_header("X-appledger-key") is None and b'name="app_name"' not in req.data
+
+
+CLAIM_URL = "https://appledger.net/app/claim.php?t=" + "T" * 43
+CLAIM = {"claim": {"url": CLAIM_URL, "expires_in_hours": 24}}
+
+
+def serve_with(extra):
+    FakeService.bodies.clear()
+    FakeService.extra = extra
+    server = HTTPServer(("127.0.0.1", 0), FakeService)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_port}/api/check.php"
+
+
+def test_cli_prints_save_link_and_report_shows_it():
+    app = make_app()
+    server, api = serve_with(CLAIM)
+    try:
+        proc = cli(app, "--yes", "--app-name", "Team  wiki", api=api)
+    finally:
+        server.shutdown()
+        FakeService.extra = {}
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.strip().splitlines()
+    assert lines[-1] == f"Save this result to a free AppLedger ledger (link works for 24 hours): {CLAIM_URL}", lines
+    assert lines[1].startswith("Report: "), lines
+    body = FakeService.bodies[0]
+    # An anonymous check asks for a save link by sending the app's name (and the local problems' levels
+    # and titles, so the saved score matches the report), never the key, a secret or a file path.
+    assert b'name="app_name"\r\n\r\nTeam wiki\r\n' in body, body[:400]
+    sent = body[:body.index(b"PK\x03\x04")]
+    assert b'"title": "Your repository contains a secrets file"' in sent and b".env" not in sent and b"never-read" not in body
+    out = app / ".appledger"
+    report = (out / "report.html").read_text(encoding="utf-8")
+    assert "Keep this result" in report and f'href="{CLAIM_URL}"' in report and "24 hours" in report
+    saved = json.loads((out / "findings.json").read_text(encoding="utf-8"))
+    assert saved["save_link"] == {"url": CLAIM_URL, "expires_in_hours": 24}
+
+
+def test_cli_quiet_prints_one_line_without_link():
+    app = make_app()
+    server, api = serve_with(CLAIM)
+    try:
+        proc = cli(app, "--yes", "--quiet", api=api)
+    finally:
+        server.shutdown()
+        FakeService.extra = {}
+    assert proc.returncode == 0, proc.stderr
+    assert len(proc.stdout.strip().splitlines()) == 1 and "claim.php" not in proc.stdout, proc.stdout
+
+
+def test_no_dashboard_asks_for_no_save_link():
+    app = make_app()
+    answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"], **CLAIM})
+    with mock.patch("urllib.request.urlopen", return_value=answer) as urlopen:
+        result = scanner.check(app, mode="hosted", confirm_upload=True, save_to_dashboard=False)
+    data = urlopen.call_args[0][0].data
+    assert b'name="app_name"' not in data and b'name="local_findings"' not in data
+    assert result["save_link"] is None
+    assert "Keep this result" not in Path(result["report"]).read_text(encoding="utf-8")
+
+
+def test_connected_check_gets_no_save_link():
+    app = make_app()
+    answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"], **CLAIM,
+                            "ledger": {"recorded": True, "app": "x", "dashboard": "https://appledger.net/app/"}})
+    with mock.patch.dict(os.environ, {"APPLEDGER_KEY": "al_" + "k" * 30}),             mock.patch("urllib.request.urlopen", return_value=answer):
+        result = scanner.check(app, mode="hosted", confirm_upload=True)
+    assert result["save_link"] is None and result["ledger"]["recorded"] is True
+
+
+def test_save_link_only_accepts_web_links():
+    from appledger.client import save_link
+    assert save_link({"claim": {"url": "javascript:alert(1)", "expires_in_hours": 24}}) is None
+    assert save_link({"claim": {"url": "https://x.test/a b"}}) is None
+    assert save_link({"claim": "https://x.test/"}) is None and save_link({}) is None
+    assert save_link({"claim": {"url": CLAIM_URL, "expires_in_hours": "soon"}}) == {"url": CLAIM_URL,
+                                                                                   "expires_in_hours": 24}
+
+
+def test_mcp_check_app_returns_save_link():
+    from appledger import server
+    app = make_app()
+    answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"], **CLAIM})
+    with mock.patch("urllib.request.urlopen", return_value=answer):
+        result = anyio.run(lambda: server.check_app(str(app), confirm_upload=True))
+    assert result["ok"] is True and result["save_link"] == CLAIM_URL, result
+    assert "save_link" in result["dashboard"] and "24 hours" in result["dashboard"]
+    assert "save_link" in server.mcp.instructions and "once" in server.mcp.instructions
+    # Without a link in the answer, there is no save_link key at all.
+    answer = fake_response({"ok": True, "findings": [], "scanners": ["Trivy"]})
+    with mock.patch("urllib.request.urlopen", return_value=answer):
+        result = anyio.run(lambda: server.check_app(str(app), confirm_upload=True))
+    assert "save_link" not in result and "Not connected" in result["dashboard"]
 
 
 if __name__ == "__main__":

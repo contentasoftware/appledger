@@ -83,6 +83,14 @@ Or tell Claude: "Connect AppLedger with this key: al_…". The key is saved in `
 
 From then on each check also saves a summary to your dashboard: the app's name, score, grade, problem counts, the list of problems found (level and short title, up to 60; never code or file paths), and the scanners used. Never the code.
 
+**Not connected yet?** From 0.2.3, a hosted check from a computer without a key ends with a save link, also shown in `report.html`:
+
+```
+Save this result to a free AppLedger ledger (link works for 24 hours): https://appledger.net/app/claim.php?t=...
+```
+
+Open it, create a free account or log in, and the check is in your ledger; the page then offers a key for that computer. Until the link is used, the service keeps only the check's summary (app name, score, the problems' levels and titles; never code), for up to 24 hours. A link works once; `--no-dashboard` turns it off.
+
 You can also add an app in the web app with **Add app**: register it without code, or upload a zip to check it in the browser (the zip is scanned and deleted the same way).
 
 ## Scheduled checks
